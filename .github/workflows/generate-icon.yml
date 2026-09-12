@@ -19,19 +19,21 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install pillow
-      - name: Generate 512 icon
+      - name: Repair and generate app icons
         run: |
           python - <<'PY'
-          from PIL import Image
-          p='static/icons/icon-192.png'
-          img=Image.open(p).convert('RGBA')
+          from PIL import Image, ImageFile
+          ImageFile.LOAD_TRUNCATED_IMAGES = True
+          src='static/icons/icon-192.png'
+          img=Image.open(src).convert('RGBA')
+          img.resize((192,192), Image.Resampling.LANCZOS).save(src, optimize=True)
           img.resize((512,512), Image.Resampling.LANCZOS).save('static/icons/icon-512.png', optimize=True)
           PY
-      - name: Commit generated icon
+      - name: Commit generated icons
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add static/icons/icon-512.png
+          git add static/icons/icon-192.png static/icons/icon-512.png
           if git diff --cached --quiet; then exit 0; fi
-          git commit -m 'Generate 512px app icon'
+          git commit -m 'Generate app icon sizes'
           git push
