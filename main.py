@@ -223,12 +223,21 @@ def parse_candidate_years(resume: str) -> Optional[float]:
     return explicit if explicit is not None else dated
 
 def detect_name(text: str, filename: str) -> str:
-    lines = [re.sub(r"\s+"," ",x).strip() for x in text.splitlines() if x.strip()]
+    lines = [re.sub(r"\s+", " ", x).strip() for x in text.splitlines() if x.strip()]
     for line in lines[:14]:
-        if 2 <= len(line.split()) <= 5 and len(line) < 60 and not any(k in line.lower() for k in ["resume","curriculum","summary","profile","email","phone","mobile","skills"]):
-            if re.fullmatch(r"[A-Za-z .'-]+", line):
-                return line.title()
-    return Path(filename).stem.replace("_"," ").replace("-"," ").title()
+        candidate = re.split(r"(?:📍|📞|✉|☎|\||\s{2,})", line, maxsplit=1)[0].strip(" ,-|")
+        candidate = re.sub(r"\b(?:resume|curriculum vitae|cv)\b", "", candidate, flags=re.I).strip(" ,-|")
+        if 1 < len(candidate.split()) <= 5 and len(candidate) < 60 and re.fullmatch(r"[A-Za-z .'-]+", candidate):
+            return candidate.title()
+        m = re.match(r"^\s*([A-Za-z][A-Za-z .'-]{2,50}?)(?=\s*(?:\+?91|[6-9]\d{9}|[A-Za-z0-9._%+-]+@|📍|📞|✉))", line)
+        if m:
+            candidate = m.group(1).strip(" ,-|")
+            if 1 < len(candidate.split()) <= 5:
+                return candidate.title()
+    stem = Path(filename).stem.replace("_", " ").replace("-", " ")
+    stem = re.sub(r"(?i)\b(?:resume|cv|profile)\b|\(\d+\)|\[\d+[^\]]*\]", " ", stem)
+    stem = re.sub(r"\s+", " ", stem).strip()
+    return stem.title() or "Candidate"
 
 def detect_email(text: str) -> str:
     m = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)
@@ -300,31 +309,25 @@ def _detect_location(text: str) -> str:
 
 
 def _latest_experience(text: str) -> Dict[str,str]:
-    lines = [re.sub(r"\s+", " ", x).strip(" \t•") for x in text.splitlines()]
     date_re = re.compile(r"(?i)\b(?:0?[1-9]|1[0-2])[/\-.](?:19|20)\d{2}\s*(?:-|–|to)\s*(?:(?:0?[1-9]|1[0-2])[/\-.](?:19|20)\d{2}|present|current)\b")
-    for i, line in enumerate(lines):
-        if not line or not date_re.search(line):
-            continue
-        title = date_re.sub("", line).strip(" ,-–|")
-        title = re.sub(r"\s+,\s*$", "", title).strip()
-        company_line = ""
-        for j in range(i + 1, min(i + 5, len(lines))):
-            cand = lines[j].strip()
-            if not cand or cand.lower() in {"experience", "work experience", "professional experience"}:
-                continue
-            if cand.startswith(("•", "-")):
-                continue
-            company_line = cand
-            break
-        company, location = company_line, ""
-        if company_line and "," in company_line:
-            parts = [p.strip() for p in company_line.split(",") if p.strip()]
-            if parts:
-                company = parts[0]
-                if len(parts) > 1:
-                    location = parts[-1]
-        return {"current_designation": title, "current_organization": company, "current_location": location}
-    return {"current_designation":"", "current_organization":"", "current_location":""}
+    m = date_re.search(text)
+    if not m:
+        return {"current_designation":"", "current_organization":"", "current_location":""}
+    before = text[max(0, m.start() - 180):m.start()]
+    before = re.split(r"(?:\n|•|●|▪|◦)", before)[-1]
+    before = re.sub(r"(?i)^.*\b(?:experience|employment|work history)\b\s*", "", before).strip(" ,-–|\t")
+    title = before[-100:].strip(" ,-–|\t")
+    after = text[m.end():m.end() + 180]
+    company_line = re.split(r"(?:\n|•|●|▪|◦)", after, maxsplit=1)[0].strip(" ,-–|\t")
+    company_line = re.split(r"(?i)\s+(?=manage(?:d|s)?\b|partner(?:ed|s)?\b|develop(?:ed|s)?\b|source(?:d|s)?\b|coordinate(?:d|s)?\b|work(?:ed|s)?\b|recruit(?:ed|s)?\b|build(?:t|s)?\b|handle(?:d|s)?\b)", company_line, maxsplit=1)[0].strip(" ,-–|\t")
+    company, location = company_line, ""
+    if company_line and "," in company_line:
+        parts = [x.strip() for x in company_line.split(",") if x.strip()]
+        if parts:
+            company = parts[0]
+            if len(parts) > 1:
+                location = parts[-1]
+    return {"current_designation": title, "current_organization": company, "current_location": location}
 
 def extract_profile_details(text: str, filename: str) -> Dict[str,Any]:
     edu = _detect_education(text)
