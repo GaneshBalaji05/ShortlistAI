@@ -26,6 +26,12 @@ spec.loader.exec_module(legacy)
 app = legacy.app
 BASE_DIR = legacy.BASE_DIR
 
+
+def __getattr__(name: str):
+    """Keep imports from the old single-file module working while the UI entrypoint evolves."""
+    return getattr(legacy, name)
+
+
 # Remove the legacy root page while preserving all APIs, static files and startup hooks.
 app.router.routes = [
     route for route in app.router.routes
