@@ -1,0 +1,45 @@
+name: Sheet2 master and test data
+on:
+  push:
+    branches: [feature/talent-pools-v2]
+    paths:
+      - '.github/workflows/sheet2-seed.yml'
+      - '.github/scripts/sheet2_seed_patch.py'
+      - 'shortlistai_test_seed.py'
+permissions:
+  contents: write
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply Sheet2 master patch
+        run: python .github/scripts/sheet2_seed_patch.py
+      - name: Validate Python
+        run: |
+          python -m py_compile main.py shortlistai_test_seed.py
+          python - <<'PY'
+          import os, sqlite3, tempfile
+          from shortlistai_test_seed import seed_test_candidate
+          db = tempfile.NamedTemporaryFile(suffix='.db', delete=False).name
+          con = sqlite3.connect(db)
+          con.execute('''CREATE TABLE candidates(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,email TEXT,phone TEXT,experience REAL,
+            skills TEXT,resume_text TEXT,source TEXT,notice_period TEXT,current_ctc TEXT,expected_ctc TEXT,
+            job_id INTEGER,stage TEXT,ai_score REAL,rating TEXT,created_at TEXT,updated_at TEXT,
+            ai_details TEXT,resume_filename TEXT,profile_details TEXT)''')
+          con.commit(); con.close()
+          seed_test_candidate(db)
+          con = sqlite3.connect(db)
+          row = con.execute("SELECT name,ai_score,rating,source FROM candidates").fetchone()
+          assert row == ('Ganesh_S_Resume (2)', 30.2, 'Weak', 'Test Data - ShortlistAI_results.xlsx'), row
+          con.close(); os.unlink(db)
+          print('seed test passed')
+          PY
+      - name: Commit generated main.py
+        run: |
+          git config user.name "ShortlistAI Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add main.py
+          git diff --cached --quiet || git commit -m "Use Sheet2 master tracker and seed uploaded test data"
+          git push
