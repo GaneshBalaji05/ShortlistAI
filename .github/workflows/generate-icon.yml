@@ -1,0 +1,37 @@
+name: Generate app icon
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'static/icons/icon-192.png'
+      - '.github/workflows/generate-icon.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pillow
+      - name: Generate 512 icon
+        run: |
+          python - <<'PY'
+          from PIL import Image
+          p='static/icons/icon-192.png'
+          img=Image.open(p).convert('RGBA')
+          img.resize((512,512), Image.Resampling.LANCZOS).save('static/icons/icon-512.png', optimize=True)
+          PY
+      - name: Commit generated icon
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add static/icons/icon-512.png
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'Generate 512px app icon'
+          git push
