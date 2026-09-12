@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>Sign in · ShortlistAI</title>
+<meta name="theme-color" content="#050505"/>
+<link rel="manifest" href="/static/manifest.webmanifest"/>
+<link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png"/>
+<style>
+:root{
+  --bg:#050505;--panel:#0c0c0e;--panel2:#121214;--line:#29292e;--line2:#3b1d20;
+  --text:#fff;--muted:#97979f;--soft:#c9c9cf;--red:#ff3038;--red2:#cf0710;--green:#69df9b;
+  --shadow:0 28px 80px rgba(0,0,0,.55);--mx:20%;--my:18%;
+}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:#050505;color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+body{min-height:100vh;overflow-x:hidden;background:
+ radial-gradient(750px circle at var(--mx) var(--my),rgba(255,48,56,.12),transparent 44%),
+ radial-gradient(900px circle at 82% 85%,rgba(255,48,56,.045),transparent 48%),#050505}
+button,input{font:inherit}button{cursor:pointer}.shell{min-height:100vh;display:grid;grid-template-columns:minmax(0,1.08fr) minmax(440px,.92fr)}
+.story{position:relative;padding:48px clamp(42px,6vw,86px);display:flex;flex-direction:column;overflow:hidden;border-right:1px solid rgba(255,255,255,.065)}
+.story:after{content:"";position:absolute;inset:auto -160px -230px auto;width:590px;height:590px;border:1px solid rgba(255,48,56,.12);border-radius:50%;box-shadow:0 0 0 80px rgba(255,48,56,.025),0 0 0 160px rgba(255,48,56,.018);pointer-events:none}
+.brand{display:flex;align-items:center;gap:13px;position:relative;z-index:2}.brand-mark{width:47px;height:47px;border-radius:50%;display:grid;place-items:center;position:relative;background:linear-gradient(145deg,#ff4148,#c90009 72%);box-shadow:0 12px 34px rgba(255,35,44,.24),inset 0 1px 0 rgba(255,255,255,.28)}
+.brand-s{font-size:26px;font-weight:950;letter-spacing:-2px;line-height:1;transform:translateX(-1px)}.brand-check{position:absolute;right:-6px;bottom:-4px;width:25px;height:25px;border-radius:50%;background:#fff;color:#111;display:grid;place-items:center;font-size:13px;font-weight:950;border:3px solid #050505}.brand-check small{position:absolute;font-size:6px;color:var(--red);font-weight:950;right:-7px;top:-7px;letter-spacing:.04em}
+.brand-name{font-size:24px;font-weight:900;letter-spacing:-.7px}.brand-name span{color:var(--red)}
+.preview-badge{margin-left:8px;color:#ffb7ba;background:rgba(255,48,56,.09);border:1px solid rgba(255,48,56,.22);font-size:10px;font-weight:850;text-transform:uppercase;letter-spacing:.08em;border-radius:999px;padding:6px 8px}
+.hero{margin:auto 0;max-width:760px;position:relative;z-index:2}.kicker{color:#ff656b;font-size:12px;text-transform:uppercase;letter-spacing:.16em;font-weight:900;margin-bottom:18px}.hero h1{font-size:clamp(46px,5.1vw,76px);line-height:.98;letter-spacing:-4px;margin:0 0 24px;max-width:740px}.hero h1 em{font-style:normal;color:var(--red)}.hero p{color:#b1b1b9;font-size:18px;line-height:1.7;max-width:620px;margin:0}
+.feature-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:38px;max-width:680px}.mini{border:1px solid rgba(255,255,255,.075);background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.012));border-radius:18px;padding:16px;backdrop-filter:blur(12px);transition:.25s ease}.mini:hover{border-color:rgba(255,48,56,.35);transform:translateY(-3px);background:rgba(255,48,56,.035)}.mini svg{width:22px;height:22px;color:#ff555c;margin-bottom:14px}.mini b{display:block;font-size:14px;margin-bottom:4px}.mini small{color:#85858e;line-height:1.45}
+.trust{display:flex;align-items:center;gap:11px;color:#797982;font-size:12px;position:relative;z-index:2}.pulse{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 6px rgba(105,223,155,.08)}
+.login-side{display:grid;place-items:center;padding:34px;background:linear-gradient(180deg,rgba(255,255,255,.012),rgba(255,255,255,0))}.login-card{width:min(460px,100%);background:rgba(12,12,14,.87);border:1px solid rgba(255,255,255,.085);border-radius:28px;padding:34px;box-shadow:var(--shadow);backdrop-filter:blur(18px);position:relative;overflow:hidden}.login-card:before{content:"";position:absolute;left:32px;right:32px;top:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,77,85,.9),transparent)}
+.mobile-brand{display:none;margin-bottom:28px}.eyebrow{font-size:11px;color:#ff666c;text-transform:uppercase;letter-spacing:.14em;font-weight:900;margin-bottom:10px}.login-card h2{font-size:32px;letter-spacing:-1.3px;margin:0 0 8px}.sub{color:var(--muted);margin:0 0 28px;line-height:1.55}.field{margin-bottom:17px}.field label{display:flex;justify-content:space-between;align-items:center;color:#c5c5cb;font-size:12px;font-weight:800;margin-bottom:8px}.input-wrap{position:relative}.input-wrap svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);width:18px;height:18px;color:#6f6f78}.input-wrap input{width:100%;height:52px;background:#0a0a0c;border:1px solid #2e2e33;border-radius:14px;color:#fff;outline:none;padding:0 46px 0 44px;transition:.2s ease}.input-wrap input::placeholder{color:#5f5f67}.input-wrap input:focus{border-color:#b6282e;box-shadow:0 0 0 4px rgba(255,48,56,.09);background:#0d0d0f}.pw-toggle{position:absolute;right:7px;top:7px;width:38px;height:38px;border:0;background:transparent;color:#898992;border-radius:10px}.pw-toggle:hover{background:#171719;color:#fff}.pw-toggle svg{position:static;transform:none;width:18px;height:18px}
+.form-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:4px 0 21px;color:#8d8d95;font-size:12px}.remember{display:flex;align-items:center;gap:8px}.remember input{accent-color:var(--red)}.forgot{color:#c3c3c9;text-decoration:none}.forgot:hover{color:#fff}.signin{width:100%;height:52px;border:0;border-radius:14px;color:#fff;font-weight:900;background:linear-gradient(135deg,#ff3b43,#c90009);box-shadow:0 12px 28px rgba(255,31,40,.22);position:relative;overflow:hidden;transition:.2s ease}.signin:before{content:"";position:absolute;inset:0;background:linear-gradient(110deg,transparent 25%,rgba(255,255,255,.18) 45%,transparent 65%);transform:translateX(-120%);transition:.55s ease}.signin:hover{transform:translateY(-1px);box-shadow:0 16px 34px rgba(255,31,40,.29)}.signin:hover:before{transform:translateX(120%)}.signin:active{transform:translateY(0)}
+.demo{margin-top:18px;border:1px solid #29292e;background:#0a0a0c;border-radius:14px;padding:13px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px}.demo div{min-width:0}.demo b{display:block;font-size:11px;color:#d4d4d8;margin-bottom:3px}.demo span{color:#777780;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.demo button{border:1px solid #442023;background:#180b0c;color:#ff878b;border-radius:10px;padding:8px 10px;font-size:10px;font-weight:850}.demo button:hover{border-color:#943038;color:#fff}.fineprint{margin:19px 3px 0;color:#66666f;font-size:10px;line-height:1.55;text-align:center}.error{min-height:18px;color:#ff777d;font-size:11px;font-weight:700;margin:-6px 0 10px;text-align:center}.success{color:#83e7aa}
+.view-toggle{display:none;position:fixed;top:13px;right:13px;z-index:100;border:1px solid #492025;background:rgba(9,9,10,.92);color:#fff;border-radius:999px;padding:9px 12px;font-size:10px;font-weight:850;backdrop-filter:blur(10px)}
+@media(max-width:900px){.shell{display:block}.story{display:none}.login-side{min-height:100vh;padding:22px 16px}.login-card{padding:27px 20px 24px;border-radius:23px}.mobile-brand{display:flex}.login-card h2{font-size:29px}.view-toggle{display:block}.force-desktop{min-width:1160px;overflow-x:auto}.force-desktop .shell{display:grid;grid-template-columns:minmax(0,1.08fr) minmax(440px,.92fr);min-height:100vh}.force-desktop .story{display:flex;min-height:100vh}.force-desktop .login-side{min-height:100vh;padding:34px}.force-desktop .mobile-brand{display:none}.force-desktop .view-toggle{position:fixed}}
+@media(max-width:420px){.login-side{padding:14px 11px}.login-card{border-radius:20px}.form-row{align-items:flex-start}.brand-name{font-size:21px}.brand-mark{width:43px;height:43px}}
+</style>
+</head>
+<body>
+<button id="viewToggle" class="view-toggle" type="button">Desktop View</button>
+<div class="shell">
+  <section class="story">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true"><span class="brand-s">S</span><span class="brand-check">✓<small>AI</small></span></div>
+      <div class="brand-name">Shortlist<span>AI</span></div><span class="preview-badge">Preview build</span>
+    </div>
+    <div class="hero">
+      <div class="kicker">Recruiting intelligence, made practical</div>
+      <h1>Hire with clarity.<br/><em>Move with speed.</em></h1>
+      <p>One recruiter workspace for candidate intelligence, AI matching, pipeline visibility and the day-to-day work that actually moves hiring forward.</p>
+      <div class="feature-strip">
+        <div class="mini">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12h4l2-7 4 14 2-7h6"/><path d="M20 5l1 1-1 1M4 17l-1 1 1 1"/></svg>
+          <b>AI Match</b><small>Rank profiles with reasons, not just keywords.</small>
+        </div>
+        <div class="mini">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3"/><path d="M3.5 19c.7-3.2 2.6-5 5.5-5s4.8 1.8 5.5 5"/><path d="M16 7h5M18.5 4.5v5"/></svg>
+          <b>Talent Database</b><small>Search and revisit your own candidate network.</small>
+        </div>
+        <div class="mini">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19V9m6 10V5m6 14v-7m4 7V3"/><path d="M2 19h20"/></svg>
+          <b>Live Pipeline</b><small>Know what your team is doing from anywhere.</small>
+        </div>
+      </div>
+    </div>
+    <div class="trust"><span class="pulse"></span><span>Built around real recruiter workflows · Desktop + mobile</span></div>
+  </section>
+
+  <section class="login-side">
+    <div class="login-card">
+      <div class="mobile-brand brand">
+        <div class="brand-mark" aria-hidden="true"><span class="brand-s">S</span><span class="brand-check">✓<small>AI</small></span></div>
+        <div class="brand-name">Shortlist<span>AI</span></div>
+      </div>
+      <div class="eyebrow">Welcome back</div>
+      <h2>Sign in to your workspace</h2>
+      <p class="sub">Your hiring desk, candidate intelligence and team pipeline — in one place.</p>
+      <form id="loginForm" novalidate>
+        <div class="field">
+          <label for="email">Work email</label>
+          <div class="input-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m4 7 8 6 8-6"/></svg>
+            <input id="email" type="email" autocomplete="username" placeholder="you@company.com"/>
+          </div>
+        </div>
+        <div class="field">
+          <label for="password"><span>Password</span></label>
+          <div class="input-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="10" width="16" height="10" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+            <input id="password" type="password" autocomplete="current-password" placeholder="Enter your password"/>
+            <button id="pwToggle" class="pw-toggle" type="button" aria-label="Show password">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="form-row"><label class="remember"><input id="remember" type="checkbox" checked/> Keep me signed in</label><a class="forgot" href="#" onclick="return false">Forgot password?</a></div>
+        <div id="error" class="error" aria-live="polite"></div>
+        <button class="signin" type="submit">Sign in to ShortlistAI →</button>
+      </form>
+      <div class="demo">
+        <div><b>Quick product preview</b><span>demo@shortlist.ai · shortlist123</span></div>
+        <button id="fillDemo" type="button">Use demo</button>
+      </div>
+      <div class="fineprint">Preview authentication only. Credentials are not sent to a login server yet; production authentication will be connected to the user and role database.</div>
+    </div>
+  </section>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+window.addEventListener('pointermove',e=>{document.documentElement.style.setProperty('--mx',`${(e.clientX/window.innerWidth)*100}%`);document.documentElement.style.setProperty('--my',`${(e.clientY/window.innerHeight)*100}%`)});
+$('pwToggle').onclick=()=>{const p=$('password'),show=p.type==='password';p.type=show?'text':'password';$('pwToggle').setAttribute('aria-label',show?'Hide password':'Show password')};
+$('fillDemo').onclick=()=>{$('email').value='demo@shortlist.ai';$('password').value='shortlist123';$('error').textContent='Demo access ready.';$('error').classList.add('success');setTimeout(()=>$('error').classList.remove('success'),900)};
+$('loginForm').onsubmit=e=>{e.preventDefault();const email=$('email').value.trim(),pw=$('password').value;if(!/^\S+@\S+\.\S+$/.test(email)){showError('Enter a valid work email.');return}if(pw.length<6){showError('Password must be at least 6 characters.');return}localStorage.setItem('shortlistai-preview-session',JSON.stringify({email,remember:$('remember').checked,ts:Date.now()}));$('error').textContent='Opening your workspace…';$('error').classList.add('success');setTimeout(()=>location.href='/app',420)};
+function showError(msg){$('error').classList.remove('success');$('error').textContent=msg}
+function syncView(){const mobile=matchMedia('(max-width:900px)').matches,desktop=mobile&&localStorage.getItem('shortlistai-login-view')==='desktop';document.body.classList.toggle('force-desktop',desktop);$('viewToggle').textContent=desktop?'Mobile View':'Desktop View'}
+$('viewToggle').onclick=()=>{const desktop=document.body.classList.contains('force-desktop');localStorage.setItem('shortlistai-login-view',desktop?'mobile':'desktop');syncView();scrollTo({top:0,left:0,behavior:'smooth'})};addEventListener('resize',syncView);syncView();
+</script>
+</body>
+</html>
