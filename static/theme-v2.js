@@ -13,7 +13,7 @@
     shortlist:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 1.4 4.1L17.5 8.5l-4.1 1.4L12 14l-1.4-4.1-4.1-1.4 4.1-1.4L12 3Z"/><path d="m18 14 .8 2.2L21 17l-2.2.8L18 20l-.8-2.2L15 17l2.2-.8L18 14Z"/></svg>'
   };
 
-  const brandHtml = '<span class="brand-logo">S<small>AI</small></span><span>Shortlist<span>AI</span></span>';
+  const brandHtml = '<span class="brand-logo">S<small>AI</small></span><span class="brand-word">Shortlist<span class="brand-ai">AI</span></span>';
   document.querySelectorAll('.brand').forEach(brand => { brand.innerHTML = brandHtml; });
 
   document.querySelectorAll('.nav button').forEach(button => {
