@@ -56,7 +56,32 @@ def extract_text(filename: str, data: bytes) -> str:
             return "\n".join((p.extract_text() or "") for p in reader.pages)
         if ext == ".docx":
             doc = Document(io.BytesIO(data))
-            return "\n".join(p.text for p in doc.paragraphs)
+            parts = []
+            # Normal paragraphs
+            parts.extend(p.text for p in doc.paragraphs if p.text and p.text.strip())
+            # Many recruiter resumes use tables for most/all content
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        txt = cell.text.strip()
+                        if txt:
+                            parts.append(txt)
+            # Headers and footers can contain contact/profile text
+            for section in doc.sections:
+                for para in section.header.paragraphs:
+                    if para.text and para.text.strip():
+                        parts.append(para.text)
+                for para in section.footer.paragraphs:
+                    if para.text and para.text.strip():
+                        parts.append(para.text)
+            # Fallback for text boxes/shapes or unusual Word layouts: collect XML text nodes
+            if len(" ".join(parts).strip()) < 80:
+                try:
+                    xml_text = [node.text for node in doc.element.body.iter() if node.tag.endswith('}t') and node.text]
+                    parts.extend(xml_text)
+                except Exception:
+                    pass
+            return "\n".join(parts)
         if ext in {".txt", ".md"}:
             return data.decode("utf-8", errors="ignore")
     except Exception as e:
