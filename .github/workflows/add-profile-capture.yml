@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/add-profile-capture.yml'
       - '.github/scripts/add_profile_capture.py'
+      - '.github/scripts/fix_parser_trial.py'
 permissions:
   contents: write
 jobs:
@@ -13,11 +14,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Patch ShortlistAI
-        run: python .github/scripts/add_profile_capture.py
+        run: |
+          python .github/scripts/add_profile_capture.py
+          python .github/scripts/fix_parser_trial.py
+      - name: Validate backend and frontend syntax
+        run: |
+          python -m py_compile main.py
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          html=Path('static/index.html').read_text(encoding='utf-8')
+          scripts=re.findall(r'<script>(.*?)</script>', html, flags=re.S)
+          Path('/tmp/shortlist-app.js').write_text('\n'.join(scripts), encoding='utf-8')
+          PY
+          node --check /tmp/shortlist-app.js
       - name: Commit changes
         run: |
           git config user.name "ShortlistAI Bot"
           git config user.email "actions@users.noreply.github.com"
           git add main.py static/index.html
-          git diff --cached --quiet || git commit -m "Add automatic profile detail capture"
+          git diff --cached --quiet || git commit -m "Improve resume parser and ATS tracker export"
           git push
