@@ -1,19 +1,295 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>ShortlistAI ATS</title><link rel="manifest" href="/static/manifest.webmanifest"/><meta name="theme-color" content="#0b1020"/><link rel="apple-touch-icon" href="/static/icons/icon-192.png"/><style>
-:root{--bg:#0b1020;--panel:#121a30;--panel2:#18223d;--text:#f7f9ff;--muted:#9eaccb;--line:#263352;--accent:#7c9cff;--good:#50d890;--warn:#ffc857;--bad:#ff6b7a}*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;background:#0b1020;color:var(--text)}button,input,textarea,select{font:inherit}.app{display:grid;grid-template-columns:240px 1fr;min-height:100vh}.side{border-right:1px solid var(--line);padding:22px 16px;background:#0e1529;position:sticky;top:0;height:100vh}.brand{font-size:23px;font-weight:900;margin:4px 8px 28px}.brand span{color:var(--accent)}.nav{display:flex;flex-direction:column;gap:7px}.nav button{background:transparent;border:0;color:var(--muted);text-align:left;padding:12px 13px;border-radius:10px;font-weight:700;cursor:pointer}.nav button.active,.nav button:hover{background:var(--panel2);color:#fff}.main{padding:26px;max-width:1450px;width:100%;margin:auto}.top{display:flex;justify-content:space-between;gap:15px;align-items:center;margin-bottom:22px}.title h1{margin:0;font-size:30px}.title p{margin:6px 0 0;color:var(--muted)}.btn{border:0;border-radius:10px;padding:11px 14px;background:linear-gradient(135deg,#6587ff,#8b6cff);color:#fff;font-weight:800;cursor:pointer}.ghost{border:1px solid var(--line);background:var(--panel2);color:#fff;border-radius:9px;padding:9px 12px;cursor:pointer}.danger{color:#ff9aa5}.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}.stat,.card{background:var(--panel);border:1px solid var(--line);border-radius:16px}.stat{padding:17px}.stat b{font-size:28px;display:block}.stat span{color:var(--muted);font-size:12px}.card{padding:18px}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.section{display:none}.section.active{display:block}.card h3{margin:0 0 14px}.field{margin-bottom:12px}.field label{display:block;font-size:12px;color:var(--muted);font-weight:700;margin-bottom:6px}.field input,.field textarea,.field select{width:100%;background:#0d1428;border:1px solid var(--line);color:#fff;border-radius:10px;padding:11px;outline:none}.field textarea{min-height:150px;resize:vertical}.table{width:100%;border-collapse:collapse}.table th,.table td{padding:12px 10px;border-bottom:1px solid var(--line);text-align:left;font-size:13px}.table th{color:var(--muted)}.badge{padding:5px 8px;border-radius:999px;font-size:11px;font-weight:800;background:#0d1428;border:1px solid var(--line)}.Strong{color:var(--good)}.Average{color:var(--warn)}.Weak{color:var(--bad)}.pipeline{display:grid;grid-template-columns:repeat(6,minmax(180px,1fr));gap:12px;overflow-x:auto}.col{background:#0d1428;border:1px solid var(--line);border-radius:14px;min-height:420px;padding:12px}.col h4{margin:0 0 10px}.cand{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px}.cand b{display:block}.cand small{color:var(--muted)}.score{font-size:12px;margin-top:7px}.toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}.toolbar input,.toolbar select{background:#0d1428;border:1px solid var(--line);color:#fff;border-radius:9px;padding:9px}.result{border:1px solid var(--line);border-radius:12px;padding:13px;margin:10px 0;background:#0d1428}.muted{color:var(--muted)}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.right{margin-left:auto}.toast{position:fixed;right:18px;bottom:18px;background:#17213b;border:1px solid var(--line);padding:12px 14px;border-radius:10px;display:none}.install{margin-top:22px;width:100%}.hidden{display:none}@media(max-width:900px){.app{grid-template-columns:1fr}.side{position:relative;height:auto;border-right:0;border-bottom:1px solid var(--line)}.nav{flex-direction:row;overflow:auto}.main{padding:18px}.stats{grid-template-columns:repeat(2,1fr)}.grid2,.grid3{grid-template-columns:1fr}.pipeline{grid-template-columns:repeat(6,220px)}.top{align-items:flex-start;flex-direction:column}}
-</style></head><body><div class="app"><aside class="side"><div class="brand">Shortlist<span>AI</span></div><div class="nav"><button class="active" data-tab="dashboard">Dashboard</button><button data-tab="jobs">Jobs</button><button data-tab="candidates">Candidates</button><button data-tab="pipeline">Pipeline</button><button data-tab="shortlist">AI Shortlisting</button></div><button id="installBtn" class="ghost install hidden">Install app</button></aside><main class="main">
-<section id="dashboard" class="section active"><div class="top"><div class="title"><h1>Recruitment Dashboard</h1><p>Your ATS overview and hiring activity.</p></div></div><div class="stats"><div class="stat"><b id="sJobs">0</b><span>Open jobs</span></div><div class="stat"><b id="sCandidates">0</b><span>Candidates</span></div><div class="stat"><b id="sInterviews">0</b><span>Interviews</span></div><div class="stat"><b id="sOffers">0</b><span>Offers</span></div><div class="stat"><b id="sJoined">0</b><span>Joined</span></div></div><div class="grid2" style="margin-top:16px"><div class="card"><h3>Quick actions</h3><div class="row"><button class="btn" onclick="showTab('jobs')">Create job</button><button class="ghost" onclick="showTab('candidates')">Add candidate</button><button class="ghost" onclick="showTab('shortlist')">AI shortlist</button></div></div><div class="card"><h3>ShortlistAI ATS V1</h3><p class="muted">Jobs, candidate database, pipeline tracking, notes, AI resume matching and Excel export are now in one workspace.</p></div></div></section>
-<section id="jobs" class="section"><div class="top"><div class="title"><h1>Jobs</h1><p>Create and manage hiring requirements.</p></div></div><div class="grid2"><div class="card"><h3>Create Job</h3><div class="field"><label>Job title</label><input id="jobTitle"/></div><div class="grid2"><div class="field"><label>Department</label><input id="jobDept"/></div><div class="field"><label>Location</label><input id="jobLoc"/></div></div><div class="field"><label>Job description</label><textarea id="jobJD"></textarea></div><button id="createJob" class="btn">Create job</button></div><div class="card"><h3>Open Jobs</h3><div id="jobList"></div></div></div></section>
-<section id="candidates" class="section"><div class="top"><div class="title"><h1>Candidates</h1><p>Search, add and manage your talent pool.</p></div></div><div class="grid2"><div class="card"><h3>Add Candidate</h3><div class="grid2"><div class="field"><label>Name</label><input id="cName"/></div><div class="field"><label>Email</label><input id="cEmail"/></div><div class="field"><label>Phone</label><input id="cPhone"/></div><div class="field"><label>Experience (years)</label><input id="cExp" type="number" step="0.1"/></div><div class="field"><label>Source</label><input id="cSource" placeholder="Naukri, LinkedIn, Referral..."/></div><div class="field"><label>Stage</label><select id="cStage"><option>Sourced</option><option>Screened</option><option>Interview</option><option>Offered</option><option>Joined</option><option>Rejected</option></select></div></div><div class="field"><label>Skills</label><input id="cSkills"/></div><div class="field"><label>Job</label><select id="cJob"><option value="">Unassigned</option></select></div><button id="addCandidate" class="btn">Add candidate</button></div><div class="card"><h3>Candidate Database</h3><div class="toolbar"><input id="searchCand" placeholder="Search candidate or skill"/><select id="filterStage"><option value="">All stages</option><option>Sourced</option><option>Screened</option><option>Interview</option><option>Offered</option><option>Joined</option><option>Rejected</option></select></div><div style="overflow:auto"><table class="table"><thead><tr><th>Name</th><th>Job</th><th>Stage</th><th>AI</th><th></th></tr></thead><tbody id="candTable"></tbody></table></div></div></div></section>
-<section id="pipeline" class="section"><div class="top"><div class="title"><h1>Pipeline</h1><p>Move candidates through each hiring stage.</p></div></div><div id="pipelineBoard" class="pipeline"></div></section>
-<section id="shortlist" class="section"><div class="top"><div class="title"><h1>AI Shortlisting</h1><p>Rank resumes against a JD and optionally save them to the ATS.</p></div></div><div class="grid2"><div class="card"><div class="field"><label>Select ATS job</label><select id="aiJob"><option value="">Custom JD</option></select></div><div class="field"><label>Job description</label><textarea id="aiJD" style="min-height:260px"></textarea></div></div><div class="card"><div class="field"><label>Candidate resumes</label><input id="aiFiles" type="file" multiple accept=".pdf,.docx,.txt,.md"/></div><div class="row"><label><input id="saveATS" type="checkbox"/> Save analyzed candidates to ATS</label></div><button id="analyze" class="btn" style="width:100%;margin-top:14px">Analyze candidates</button><p id="status" class="muted">No analysis run yet.</p><button id="export" class="ghost hidden">Download Excel</button></div></div><div id="results" class="card hidden" style="margin-top:16px"><h3>Ranked shortlist</h3><div id="resultList"></div></div></section>
-</main></div><div id="toast" class="toast"></div><script>
-const $=id=>document.getElementById(id), stages=['Sourced','Screened','Interview','Offered','Joined','Rejected'];let jobs=[],candidates=[],latest=[];function toast(t){$('toast').textContent=t;$('toast').style.display='block';setTimeout(()=>$('toast').style.display='none',2200)}function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}async function api(url,opt){const r=await fetch(url,opt);const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.detail||'Request failed');return d}function showTab(id){document.querySelectorAll('.section').forEach(x=>x.classList.toggle('active',x.id===id));document.querySelectorAll('.nav button').forEach(x=>x.classList.toggle('active',x.dataset.tab===id));if(id==='dashboard')loadStats();if(id==='jobs')loadJobs();if(id==='candidates')loadCandidates();if(id==='pipeline')loadPipeline()}document.querySelectorAll('.nav button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
-async function loadStats(){const s=await api('/api/stats');$('sJobs').textContent=s.jobs;$('sCandidates').textContent=s.candidates;$('sInterviews').textContent=s.interviews;$('sOffers').textContent=s.offers;$('sJoined').textContent=s.joined}
-async function loadJobs(){jobs=await api('/api/jobs');$('jobList').innerHTML=jobs.length?jobs.map(j=>`<div class="result"><div class="row"><div><b>${esc(j.title)}</b><div class="muted">${esc(j.department||'')} ${j.location?'• '+esc(j.location):''}</div></div><button class="ghost danger right" onclick="delJob(${j.id})">Delete</button></div></div>`).join(''):'<p class="muted">No jobs yet.</p>';const opts='<option value="">Unassigned</option>'+jobs.map(j=>`<option value="${j.id}">${esc(j.title)}</option>`).join('');$('cJob').innerHTML=opts;$('aiJob').innerHTML='<option value="">Custom JD</option>'+jobs.map(j=>`<option value="${j.id}">${esc(j.title)}</option>`).join('')}
-$('createJob').onclick=async()=>{try{await api('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:$('jobTitle').value,department:$('jobDept').value,location:$('jobLoc').value,jd:$('jobJD').value})});$('jobTitle').value=$('jobDept').value=$('jobLoc').value=$('jobJD').value='';toast('Job created');await loadJobs();await loadStats()}catch(e){toast(e.message)}};async function delJob(id){if(!confirm('Delete this job?'))return;await api('/api/jobs/'+id,{method:'DELETE'});loadJobs();loadStats()}
-async function loadCandidates(){jobs=await api('/api/jobs');const q=encodeURIComponent($('searchCand').value||''),st=encodeURIComponent($('filterStage').value||'');candidates=await api(`/api/candidates?q=${q}&stage=${st}`);$('candTable').innerHTML=candidates.length?candidates.map(c=>`<tr><td><b>${esc(c.name)}</b><div class="muted">${esc(c.email||'')}</div></td><td>${esc(c.job_title||'Unassigned')}</td><td><select onchange="moveCand(${c.id},this.value)">${stages.map(s=>`<option ${s===c.stage?'selected':''}>${s}</option>`).join('')}</select></td><td>${c.ai_score??'—'} ${c.rating?`<span class="badge ${c.rating}">${c.rating}</span>`:''}</td><td><button class="ghost danger" onclick="delCand(${c.id})">Delete</button></td></tr>`).join(''):'<tr><td colspan="5" class="muted">No candidates found.</td></tr>';const opts='<option value="">Unassigned</option>'+jobs.map(j=>`<option value="${j.id}">${esc(j.title)}</option>`).join('');$('cJob').innerHTML=opts}
-$('searchCand').oninput=()=>loadCandidates();$('filterStage').onchange=()=>loadCandidates();$('addCandidate').onclick=async()=>{try{await api('/api/candidates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:$('cName').value,email:$('cEmail').value,phone:$('cPhone').value,experience:$('cExp').value?Number($('cExp').value):null,skills:$('cSkills').value,source:$('cSource').value,job_id:$('cJob').value?Number($('cJob').value):null,stage:$('cStage').value})});toast('Candidate added');loadCandidates();loadStats()}catch(e){toast(e.message)}};async function moveCand(id,stage){await api(`/api/candidates/${id}/stage`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({stage})});toast('Stage updated');loadStats()}async function delCand(id){if(!confirm('Delete this candidate?'))return;await api('/api/candidates/'+id,{method:'DELETE'});loadCandidates();loadStats()}
-async function loadPipeline(){candidates=await api('/api/candidates');$('pipelineBoard').innerHTML=stages.map(s=>`<div class="col"><h4>${s} <span class="muted">(${candidates.filter(c=>c.stage===s).length})</span></h4>${candidates.filter(c=>c.stage===s).map(c=>`<div class="cand"><b>${esc(c.name)}</b><small>${esc(c.job_title||'Unassigned')}</small><div class="score">AI score: ${c.ai_score??'—'}</div><select onchange="moveCand(${c.id},this.value);setTimeout(loadPipeline,400)" style="width:100%;margin-top:8px">${stages.map(x=>`<option ${x===s?'selected':''}>${x}</option>`).join('')}</select></div>`).join('')}</div>`).join('')}
-$('aiJob').onchange=()=>{const j=jobs.find(x=>String(x.id)===$('aiJob').value);if(j)$('aiJD').value=j.jd};$('analyze').onclick=async()=>{const jd=$('aiJD').value.trim(),files=$('aiFiles').files;if(jd.length<50)return $('status').textContent='Paste or select a fuller JD.';if(!files.length)return $('status').textContent='Upload at least one resume.';const fd=new FormData();fd.append('jd',jd);[...files].forEach(f=>fd.append('resumes',f));if($('aiJob').value)fd.append('job_id',$('aiJob').value);fd.append('save_to_ats',$('saveATS').checked?'true':'false');$('analyze').disabled=true;$('status').textContent='Analyzing…';try{const d=await api('/analyze',{method:'POST',body:fd});latest=d.results;$('results').classList.remove('hidden');$('export').classList.remove('hidden');$('resultList').innerHTML=d.results.map((r,i)=>`<div class="result"><div class="row"><div><b>#${i+1} ${esc(r.candidate)}</b><div class="muted">${esc(r.file)}</div></div><div class="right"><b>${r.score}</b> <span class="badge ${r.rating}">${r.rating}</span></div></div><div class="muted" style="margin-top:8px">Matched: ${esc((r.matched_skills||[]).join(', ')||'None')}</div><div class="muted">Gaps: ${esc((r.missing_skills||[]).join(', ')||'None')}</div></div>`).join('');$('status').textContent=`Done. Ranked ${d.results.length} candidate(s).`;if($('saveATS').checked){toast('Candidates saved to ATS');loadStats()}}catch(e){$('status').textContent=e.message}finally{$('analyze').disabled=false}};$('export').onclick=async()=>{if(!latest.length)return;const r=await fetch('/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({results:latest})});const b=await r.blob(),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='ShortlistAI_results.xlsx';a.click();URL.revokeObjectURL(a.href)};
-let deferredInstall;window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e;$('installBtn').classList.remove('hidden')});$('installBtn').onclick=async()=>{if(!deferredInstall)return;deferredInstall.prompt();await deferredInstall.userChoice;deferredInstall=null;$('installBtn').classList.add('hidden')};if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/static/sw.js').catch(()=>{}));(async()=>{await loadStats();await loadJobs();})();
-</script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>ShortlistAI ATS</title>
+<link rel="manifest" href="/static/manifest.webmanifest"/>
+<meta name="theme-color" content="#0b1020"/>
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png"/>
+<style>
+:root{--bg:#0b1020;--panel:#121a30;--panel2:#18223d;--text:#f7f9ff;--muted:#9eaccb;--line:#263352;--accent:#7c9cff;--good:#50d890;--warn:#ffc857;--bad:#ff6b7a}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--text)}
+button,input,textarea,select{font:inherit}.app{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
+.side{border-right:1px solid var(--line);padding:22px 16px;background:#0e1529;position:sticky;top:0;height:100vh}
+.brand{font-size:23px;font-weight:900;margin:4px 8px 28px}.brand span{color:var(--accent)}
+.nav{display:flex;flex-direction:column;gap:7px}.nav button{background:transparent;border:0;color:var(--muted);text-align:left;padding:12px 13px;border-radius:10px;font-weight:700;cursor:pointer}
+.nav button.active,.nav button:hover{background:var(--panel2);color:#fff}.main{padding:26px;max-width:1450px;width:100%;margin:auto}
+.top{display:flex;justify-content:space-between;gap:15px;align-items:center;margin-bottom:22px}.title h1{margin:0;font-size:30px}.title p{margin:6px 0 0;color:var(--muted)}
+.btn{border:0;border-radius:10px;padding:11px 14px;background:linear-gradient(135deg,#6587ff,#8b6cff);color:#fff;font-weight:800;cursor:pointer}
+.ghost{border:1px solid var(--line);background:var(--panel2);color:#fff;border-radius:9px;padding:9px 12px;cursor:pointer}.danger{color:#ff9aa5}
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}.stat,.card{background:var(--panel);border:1px solid var(--line);border-radius:16px}
+.stat{padding:17px}.stat b{font-size:28px;display:block}.stat span{color:var(--muted);font-size:12px}.card{padding:18px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.section{display:none}.section.active{display:block}.card h3{margin:0 0 14px}
+.field{margin-bottom:12px}.field label{display:block;font-size:12px;color:var(--muted);font-weight:700;margin-bottom:6px}
+.field input,.field textarea,.field select{width:100%;background:#0d1428;border:1px solid var(--line);color:#fff;border-radius:10px;padding:11px;outline:none}.field textarea{min-height:150px;resize:vertical}
+.table{width:100%;border-collapse:collapse}.table th,.table td{padding:12px 10px;border-bottom:1px solid var(--line);text-align:left;font-size:13px}.table th{color:var(--muted)}
+.badge{padding:5px 8px;border-radius:999px;font-size:11px;font-weight:800;background:#0d1428;border:1px solid var(--line)}.Strong{color:var(--good)}.Average{color:var(--warn)}.Weak{color:var(--bad)}
+.pipeline{display:grid;grid-template-columns:repeat(6,minmax(180px,1fr));gap:12px;overflow-x:auto}.col{background:#0d1428;border:1px solid var(--line);border-radius:14px;min-height:420px;padding:12px}.col h4{margin:0 0 10px}
+.cand{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;cursor:pointer}.cand b{display:block}.cand small{color:var(--muted)}
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}.toolbar input,.toolbar select{background:#0d1428;border:1px solid var(--line);color:#fff;border-radius:9px;padding:9px}
+.result{border:1px solid var(--line);border-radius:12px;padding:15px;margin:10px 0;background:#0d1428}.muted{color:var(--muted)}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.right{margin-left:auto}
+.toast{position:fixed;right:18px;bottom:18px;background:#17213b;border:1px solid var(--line);padding:12px 14px;border-radius:10px;display:none;z-index:50}.install{margin-top:22px;width:100%}.hidden{display:none!important}
+.eval-head{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:14px}.bigscore{font-size:38px;font-weight:900}.metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin:12px 0}.metric{background:#0d1428;border:1px solid var(--line);border-radius:11px;padding:11px}.metric small{display:block;color:var(--muted)}.metric b{font-size:18px}
+.chips{display:flex;gap:7px;flex-wrap:wrap}.chip{background:#0d1428;border:1px solid var(--line);border-radius:999px;padding:5px 8px;font-size:11px}.eval-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.eval-block{background:#0d1428;border:1px solid var(--line);border-radius:12px;padding:12px}.eval-block h4{margin:0 0 9px}.eval-block ul{margin:7px 0 0;padding-left:20px;line-height:1.5}
+.modal{position:fixed;inset:0;background:rgba(4,8,18,.78);display:grid;place-items:center;padding:18px;z-index:40}.modalbox{background:#111a30;border:1px solid var(--line);border-radius:18px;width:min(980px,100%);max-height:92vh;overflow:auto;padding:20px}.modalhead{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.close{font-size:20px}
+.profile{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}.profile div{background:#0d1428;border:1px solid var(--line);border-radius:10px;padding:10px}.profile small{color:var(--muted);display:block}
+.note{border-bottom:1px solid var(--line);padding:9px 0}.method{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.5}
+@media(max-width:900px){.app{grid-template-columns:1fr}.side{position:relative;height:auto;border-right:0;border-bottom:1px solid var(--line)}.nav{flex-direction:row;overflow:auto}.main{padding:18px}.stats{grid-template-columns:repeat(2,1fr)}.grid2,.grid3,.eval-grid{grid-template-columns:1fr}.pipeline{grid-template-columns:repeat(6,220px)}.top{align-items:flex-start;flex-direction:column}.metrics{grid-template-columns:repeat(2,1fr)}.profile{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+<aside class="side">
+  <div class="brand">Shortlist<span>AI</span></div>
+  <div class="nav">
+    <button class="active" data-tab="dashboard">Dashboard</button>
+    <button data-tab="jobs">Jobs</button>
+    <button data-tab="candidates">Candidates</button>
+    <button data-tab="pipeline">Pipeline</button>
+    <button data-tab="shortlist">AI Shortlisting</button>
+  </div>
+  <button id="installBtn" class="ghost install hidden">Install app</button>
+</aside>
+<main class="main">
+<section id="dashboard" class="section active">
+  <div class="top"><div class="title"><h1>Recruitment Dashboard</h1><p>Your ATS overview and hiring activity.</p></div></div>
+  <div class="stats">
+    <div class="stat"><b id="sJobs">0</b><span>Open jobs</span></div>
+    <div class="stat"><b id="sCandidates">0</b><span>Candidates</span></div>
+    <div class="stat"><b id="sInterviews">0</b><span>Interviews</span></div>
+    <div class="stat"><b id="sOffers">0</b><span>Offers</span></div>
+    <div class="stat"><b id="sJoined">0</b><span>Joined</span></div>
+  </div>
+  <div class="grid2" style="margin-top:16px">
+    <div class="card"><h3>Quick actions</h3><div class="row"><button class="btn" onclick="showTab('jobs')">Create job</button><button class="ghost" onclick="showTab('candidates')">Add candidate</button><button class="ghost" onclick="showTab('shortlist')">AI shortlist</button></div></div>
+    <div class="card"><h3>ShortlistAI ATS</h3><p class="muted">Jobs, candidate database, pipeline tracking, notes and explainable AI evaluation in one recruiter workspace.</p></div>
+  </div>
+</section>
+
+<section id="jobs" class="section">
+  <div class="top"><div class="title"><h1>Jobs</h1><p>Create and manage hiring requirements.</p></div></div>
+  <div class="grid2">
+    <div class="card">
+      <h3>Create Job</h3>
+      <div class="field"><label>Job title</label><input id="jobTitle"/></div>
+      <div class="grid2"><div class="field"><label>Department</label><input id="jobDept"/></div><div class="field"><label>Location</label><input id="jobLoc"/></div></div>
+      <div class="field"><label>Job description</label><textarea id="jobJD"></textarea></div>
+      <button id="createJob" class="btn">Create job</button>
+    </div>
+    <div class="card"><h3>Open Jobs</h3><div id="jobList"></div></div>
+  </div>
+</section>
+
+<section id="candidates" class="section">
+  <div class="top"><div class="title"><h1>Candidates</h1><p>Search, add, evaluate and manage your talent pool.</p></div></div>
+  <div class="grid2">
+    <div class="card">
+      <h3>Add Candidate</h3>
+      <div class="grid2">
+        <div class="field"><label>Name</label><input id="cName"/></div>
+        <div class="field"><label>Email</label><input id="cEmail"/></div>
+        <div class="field"><label>Phone</label><input id="cPhone"/></div>
+        <div class="field"><label>Experience (years)</label><input id="cExp" type="number" step="0.1"/></div>
+        <div class="field"><label>Source</label><input id="cSource" placeholder="Naukri, LinkedIn, Referral..."/></div>
+        <div class="field"><label>Stage</label><select id="cStage"><option>Sourced</option><option>Screened</option><option>Interview</option><option>Offered</option><option>Joined</option><option>Rejected</option></select></div>
+      </div>
+      <div class="field"><label>Skills</label><input id="cSkills"/></div>
+      <div class="field"><label>Job</label><select id="cJob"><option value="">Unassigned</option></select></div>
+      <button id="addCandidate" class="btn">Add candidate</button>
+    </div>
+    <div class="card">
+      <h3>Candidate Database</h3>
+      <div class="toolbar"><input id="searchCand" placeholder="Search candidate or skill"/><select id="filterStage"><option value="">All stages</option><option>Sourced</option><option>Screened</option><option>Interview</option><option>Offered</option><option>Joined</option><option>Rejected</option></select></div>
+      <div style="overflow:auto"><table class="table"><thead><tr><th>Name</th><th>Job</th><th>Stage</th><th>AI</th><th></th></tr></thead><tbody id="candTable"></tbody></table></div>
+    </div>
+  </div>
+</section>
+
+<section id="pipeline" class="section">
+  <div class="top"><div class="title"><h1>Pipeline</h1><p>Move candidates through each hiring stage.</p></div></div>
+  <div id="pipelineBoard" class="pipeline"></div>
+</section>
+
+<section id="shortlist" class="section">
+  <div class="top"><div class="title"><h1>AI Shortlisting</h1><p>Rank resumes against a JD, inspect the evidence, and save candidates into the ATS.</p></div></div>
+  <div class="grid2">
+    <div class="card">
+      <div class="field"><label>Select ATS job</label><select id="aiJob"><option value="">Custom JD</option></select></div>
+      <div class="field"><label>Job description</label><textarea id="aiJD" style="min-height:260px"></textarea></div>
+    </div>
+    <div class="card">
+      <div class="field"><label>Candidate resumes</label><input id="aiFiles" type="file" multiple accept=".pdf,.docx,.txt,.md"/></div>
+      <div class="row"><label><input id="saveATS" type="checkbox"/> Save analyzed candidates to ATS</label></div>
+      <button id="analyze" class="btn" style="width:100%;margin-top:14px">Analyze candidates</button>
+      <p id="status" class="muted">No analysis run yet.</p>
+      <button id="export" class="ghost hidden">Download Excel</button>
+    </div>
+  </div>
+  <div id="results" class="card hidden" style="margin-top:16px"><h3>Ranked shortlist</h3><div id="resultList"></div><div id="method" class="method"></div></div>
+</section>
+</main>
+</div>
+
+<div id="candidateModal" class="modal hidden"><div class="modalbox"><div class="modalhead"><div><h2 id="modalName" style="margin:0"></h2><div id="modalSub" class="muted"></div></div><button class="ghost close" onclick="closeCandidate()">×</button></div><div id="modalBody"></div></div></div>
+<div id="toast" class="toast"></div>
+
+<script>
+const $=id=>document.getElementById(id);
+const stages=['Sourced','Screened','Interview','Offered','Joined','Rejected'];
+let jobs=[],candidates=[],latest=[];
+
+function toast(t){$('toast').textContent=t;$('toast').style.display='block';setTimeout(()=>$('toast').style.display='none',2200)}
+function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+async function api(url,opt){const r=await fetch(url,opt);const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.detail||'Request failed');return d}
+function fmtYears(v){return v===null||v===undefined?'Not detected':`${v} yrs`}
+function chips(arr,empty='None'){return (arr&&arr.length?arr:[empty]).map(x=>`<span class="chip">${esc(x)}</span>`).join('')}
+function listItems(arr,empty='None'){return `<ul>${(arr&&arr.length?arr:[empty]).map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`}
+
+function showTab(id){
+  document.querySelectorAll('.section').forEach(x=>x.classList.toggle('active',x.id===id));
+  document.querySelectorAll('.nav button').forEach(x=>x.classList.toggle('active',x.dataset.tab===id));
+  if(id==='dashboard')loadStats();
+  if(id==='jobs')loadJobs();
+  if(id==='candidates')loadCandidates();
+  if(id==='pipeline')loadPipeline();
+  if(id==='shortlist')loadJobs();
+}
+document.querySelectorAll('.nav button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
+
+async function loadStats(){
+  const s=await api('/api/stats');
+  $('sJobs').textContent=s.jobs;$('sCandidates').textContent=s.candidates;$('sInterviews').textContent=s.interviews;$('sOffers').textContent=s.offers;$('sJoined').textContent=s.joined;
+}
+
+async function loadJobs(){
+  jobs=await api('/api/jobs');
+  $('jobList').innerHTML=jobs.length?jobs.map(j=>`<div class="result"><div class="row"><div><b>${esc(j.title)}</b><div class="muted">${esc(j.department||'')} ${j.location?'• '+esc(j.location):''}</div></div><button class="ghost danger right" onclick="delJob(${j.id})">Delete</button></div></div>`).join(''):'<p class="muted">No jobs yet.</p>';
+  const opts='<option value="">Unassigned</option>'+jobs.map(j=>`<option value="${j.id}">${esc(j.title)}</option>`).join('');
+  $('cJob').innerHTML=opts;
+  $('aiJob').innerHTML='<option value="">Custom JD</option>'+jobs.map(j=>`<option value="${j.id}">${esc(j.title)}</option>`).join('');
+}
+
+$('createJob').onclick=async()=>{
+  try{
+    await api('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:$('jobTitle').value,department:$('jobDept').value,location:$('jobLoc').value,jd:$('jobJD').value})});
+    $('jobTitle').value=$('jobDept').value=$('jobLoc').value=$('jobJD').value='';
+    toast('Job created');await loadJobs();await loadStats();
+  }catch(e){toast(e.message)}
+};
+async function delJob(id){if(!confirm('Delete this job?'))return;await api('/api/jobs/'+id,{method:'DELETE'});await loadJobs();await loadStats()}
+
+async function loadCandidates(){
+  jobs=await api('/api/jobs');
+  const q=encodeURIComponent($('searchCand').value||''),st=encodeURIComponent($('filterStage').value||'');
+  candidates=await api(`/api/candidates?q=${q}&stage=${st}`);
+  $('candTable').innerHTML=candidates.length?candidates.map(c=>`<tr>
+    <td><b>${esc(c.name)}</b><div class="muted">${esc(c.email||'')}</div></td>
+    <td>${esc(c.job_title||'Unassigned')}</td>
+    <td><select onchange="moveCand(${c.id},this.value)">${stages.map(s=>`<option ${s===c.stage?'selected':''}>${s}</option>`).join('')}</select></td>
+    <td>${c.ai_score??'—'} ${c.rating?`<span class="badge ${c.rating}">${c.rating}</span>`:''}</td>
+    <td><div class="row"><button class="ghost" onclick="openCandidate(${c.id})">View</button><button class="ghost danger" onclick="delCand(${c.id})">Delete</button></div></td>
+  </tr>`).join(''):'<tr><td colspan="5" class="muted">No candidates found.</td></tr>';
+  $('cJob').innerHTML='<option value="">Unassigned</option>'+jobs.map(j=>`<option value="${j.id}">${esc(j.title)}</option>`).join('');
+}
+$('searchCand').oninput=()=>loadCandidates();
+$('filterStage').onchange=()=>loadCandidates();
+
+$('addCandidate').onclick=async()=>{
+  try{
+    await api('/api/candidates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      name:$('cName').value,email:$('cEmail').value,phone:$('cPhone').value,
+      experience:$('cExp').value?Number($('cExp').value):null,skills:$('cSkills').value,source:$('cSource').value,
+      job_id:$('cJob').value?Number($('cJob').value):null,stage:$('cStage').value
+    })});
+    toast('Candidate added');await loadCandidates();await loadStats();
+  }catch(e){toast(e.message)}
+};
+async function moveCand(id,stage){try{await api(`/api/candidates/${id}/stage`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({stage})});toast('Stage updated');loadStats()}catch(e){toast(e.message)}}
+async function delCand(id){if(!confirm('Delete this candidate?'))return;await api(`/api/candidates/${id}`,{method:'DELETE'});await loadCandidates();await loadStats()}
+
+async function loadPipeline(){
+  const all=await api('/api/candidates');
+  $('pipelineBoard').innerHTML=stages.map(s=>`<div class="col"><h4>${s} <span class="muted">(${all.filter(c=>c.stage===s).length})</span></h4>${all.filter(c=>c.stage===s).map(c=>`<div class="cand" onclick="openCandidate(${c.id})"><b>${esc(c.name)}</b><small>${esc(c.job_title||'Unassigned')}</small><div style="margin-top:7px">${c.ai_score??'—'} ${c.rating?`<span class="badge ${c.rating}">${c.rating}</span>`:''}</div></div>`).join('')||'<div class="muted">No candidates</div>'}</div>`).join('');
+}
+
+function renderEvaluation(e){
+  if(!e)return `<div class="card" style="margin-top:14px"><h3>AI Evaluation</h3><p class="muted">No AI evaluation is stored for this candidate yet. Upload the resume through AI Shortlisting and save it to the ATS.</p></div>`;
+  return `<div class="card" style="margin-top:14px">
+    <div class="eval-head"><div><div class="muted">AI match score</div><div class="bigscore">${e.score??'—'}</div></div><span class="badge ${e.rating||''}">${esc(e.rating||'Not rated')}</span><div class="right muted">Candidate: ${fmtYears(e.candidate_years)} • JD minimum: ${fmtYears(e.required_years)}</div></div>
+    <div class="metrics">
+      <div class="metric"><small>Semantic similarity</small><b>${e.semantic_similarity??'—'}%</b></div>
+      <div class="metric"><small>Calibrated semantic fit</small><b>${e.semantic_fit??'—'}%</b></div>
+      <div class="metric"><small>Skill coverage</small><b>${e.skill_coverage??'—'}%</b></div>
+      <div class="metric"><small>Experience fit</small><b>${e.experience_fit??'—'}%</b></div>
+      <div class="metric"><small>Recent evidence</small><b>${e.recent_evidence??'—'}%</b></div>
+    </div>
+    <div class="eval-grid">
+      <div class="eval-block"><h4>Matched skills</h4><div class="chips">${chips(e.matched_skills)}</div><h4 style="margin-top:14px">Recent/current evidence</h4><div class="chips">${chips(e.recent_skills)}</div><h4 style="margin-top:14px">Evidence</h4>${listItems(e.evidence)}</div>
+      <div class="eval-block"><h4>Missing / unclear skills</h4><div class="chips">${chips(e.missing_skills,'No major skill gap detected')}</div><h4 style="margin-top:14px">Risks / checks</h4>${listItems(e.risks)}<h4 style="margin-top:14px">Screening questions</h4>${listItems(e.screening_questions)}</div>
+    </div>
+  </div>`;
+}
+
+async function openCandidate(id){
+  try{
+    const c=await api(`/api/candidates/${id}`);
+    $('modalName').textContent=c.name;
+    $('modalSub').textContent=`${c.job_title||'Unassigned'} • ${c.stage||'Sourced'}`;
+    $('modalBody').innerHTML=`<div class="profile">
+      <div><small>Email</small><b>${esc(c.email||'—')}</b></div><div><small>Phone</small><b>${esc(c.phone||'—')}</b></div><div><small>Experience</small><b>${fmtYears(c.experience)}</b></div>
+      <div><small>Source</small><b>${esc(c.source||'—')}</b></div><div><small>Resume</small><b>${esc(c.resume_filename||'—')}</b></div><div><small>AI rating</small><b>${c.ai_score??'—'} ${c.rating?`<span class="badge ${c.rating}">${c.rating}</span>`:''}</b></div>
+    </div>
+    <div class="row"><button class="btn" onclick="reevaluate(${c.id})">Re-run AI evaluation</button></div>
+    ${renderEvaluation(c.ai_evaluation)}
+    <div class="card" style="margin-top:14px"><h3>Recruiter Notes</h3><div class="row"><input id="noteText" style="flex:1;background:#0d1428;border:1px solid var(--line);color:#fff;border-radius:9px;padding:10px" placeholder="Add screening or follow-up note"/><button class="ghost" onclick="addNote(${c.id})">Add note</button></div><div style="margin-top:10px">${(c.notes||[]).map(n=>`<div class="note">${esc(n.note)}<div class="muted" style="font-size:11px">${esc((n.created_at||'').replace('T',' ').slice(0,16))}</div></div>`).join('')||'<div class="muted">No notes yet.</div>'}</div></div>`;
+    $('candidateModal').classList.remove('hidden');
+  }catch(e){toast(e.message)}
+}
+function closeCandidate(){$('candidateModal').classList.add('hidden')}
+$('candidateModal').addEventListener('click',e=>{if(e.target===$('candidateModal'))closeCandidate()});
+async function addNote(id){const note=$('noteText').value.trim();if(!note)return;try{await api(`/api/candidates/${id}/notes`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({note})});toast('Note added');openCandidate(id)}catch(e){toast(e.message)}}
+async function reevaluate(id){try{toast('Running AI evaluation…');await api(`/api/candidates/${id}/evaluate`,{method:'POST'});toast('AI evaluation updated');await openCandidate(id);await loadCandidates()}catch(e){toast(e.message)}}
+
+$('aiJob').onchange=()=>{
+  const id=Number($('aiJob').value||0),j=jobs.find(x=>x.id===id);
+  if(j)$('aiJD').value=j.jd;
+};
+
+$('analyze').onclick=async()=>{
+  const jd=$('aiJD').value.trim(),files=$('aiFiles').files;
+  if(jd.length<50){$('status').textContent='Paste or select a fuller job description first.';return}
+  if(!files.length){$('status').textContent='Upload at least one resume.';return}
+  const fd=new FormData();fd.append('jd',jd);[...files].forEach(f=>fd.append('resumes',f));
+  if($('aiJob').value)fd.append('job_id',$('aiJob').value);
+  fd.append('save_to_ats',$('saveATS').checked?'true':'false');
+  $('analyze').disabled=true;$('status').textContent=`Analyzing ${files.length} resume(s)…`;
+  try{
+    const r=await fetch('/analyze',{method:'POST',body:fd}),d=await r.json();
+    if(!r.ok)throw new Error(d.detail||'Analysis failed');
+    latest=d.results;
+    $('results').classList.remove('hidden');$('export').classList.remove('hidden');$('method').textContent=d.methodology||'';
+    $('resultList').innerHTML=d.results.map((x,i)=>`<div class="result"><div class="row"><div><b>#${i+1} ${esc(x.candidate)}</b><div class="muted">${esc(x.file||'')}</div></div><div class="right"><span style="font-size:23px;font-weight:900">${x.score}</span> <span class="badge ${x.rating}">${x.rating}</span></div></div>${renderEvaluation(x).replace('<div class="card" style="margin-top:14px">','<div style="margin-top:12px">').replace(/<\/div>$/,'</div>')}</div>`).join('');
+    $('status').textContent=`Done. Ranked ${d.results.length} candidate(s).${d.errors?.length?' '+d.errors.length+' file(s) skipped.':''}`;
+    if($('saveATS').checked){toast('Candidates saved to ATS');loadStats()}
+  }catch(e){$('status').textContent=e.message}finally{$('analyze').disabled=false}
+};
+
+$('export').onclick=async()=>{
+  if(!latest.length)return;
+  const r=await fetch('/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({results:latest})});
+  if(!r.ok){toast('Export failed');return}
+  const blob=await r.blob(),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='ShortlistAI_results.xlsx';a.click();URL.revokeObjectURL(a.href);
+};
+
+let deferredInstall;
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e;$('installBtn').classList.remove('hidden')});
+$('installBtn').onclick=async()=>{if(!deferredInstall)return;deferredInstall.prompt();await deferredInstall.userChoice;deferredInstall=null;$('installBtn').classList.add('hidden')};
+window.addEventListener('appinstalled',()=>$('installBtn').classList.add('hidden'));
+if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/static/sw.js').catch(()=>{}));
+
+(async()=>{try{await loadJobs();await loadStats()}catch(e){toast(e.message)}})();
+</script>
+</body>
+</html>
