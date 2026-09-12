@@ -1,0 +1,2 @@
+Senior Python Full Stack Developer — 5+ years
+We are looking for a hands-on engineer with Python, FastAPI, React, TypeScript, PostgreSQL, Redis, AWS, Docker and Generative AI experience. The engineer should build production REST APIs, modern frontend modules and AI-powered features. Experience with Agentic AI, LLMs, RAG, CI/CD and Kubernetes is preferred.
