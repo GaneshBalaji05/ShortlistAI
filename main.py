@@ -13,6 +13,7 @@ from pypdf import PdfReader
 from docx import Document
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+from shortlistai_test_seed import seed_test_candidate
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = os.getenv("SQLITE_PATH", str(BASE_DIR / "shortlistai.db"))
@@ -95,6 +96,7 @@ def init_db():
 @app.on_event("startup")
 def startup():
     init_db()
+    seed_test_candidate(DB_PATH)
 
 def normalize(text: str) -> str:
     text = (text or "").lower().replace("–","-").replace("—","-")
@@ -822,19 +824,19 @@ def export_candidate_tracker():
             "Client": p.get("client", ""),
             "Position Worked": c.get("job_title") or p.get("role_name", ""),
             "Tech Stack": c.get("skills") or "",
-            "Recruiter": p.get("recruiter_name", ""),
+            "Recruter": p.get("recruiter_name", ""),
             "Resource Name": c.get("name") or "",
-            "Contact Number": c.get("phone") or "",
-            "Email": c.get("email") or "",
+            "Number": c.get("phone") or "",
+            "Mail-id": c.get("email") or "",
             "Current Company": p.get("current_organization", ""),
             "Current Designation": p.get("current_designation", ""),
-            "Total Experience": c.get("experience") if c.get("experience") is not None else p.get("total_experience", ""),
-            "Relevant Experience": p.get("relevant_experience", ""),
-            "Current Company Experience": p.get("current_company_experience", ""),
-            "Current CTC": c.get("current_ctc") or p.get("current_ctc", ""),
-            "Expected CTC": c.get("expected_ctc") or p.get("expected_ctc", ""),
-            "Offer in Hand": p.get("holding_offers", ""),
-            "Last Appraisal": p.get("last_appraisal", ""),
+            "Tot Exp (In Years)": c.get("experience") if c.get("experience") is not None else p.get("total_experience", ""),
+            "Rel Exp (In Years)": p.get("relevant_experience", ""),
+            "Current company Exp (In Years)": p.get("current_company_experience", ""),
+            "CTC (In LPA)": c.get("current_ctc") or p.get("current_ctc", ""),
+            "ECTC (In LPA)": c.get("expected_ctc") or p.get("expected_ctc", ""),
+            "Offer In hand (if any)": p.get("holding_offers", ""),
+            "Last Appraisal & Month": p.get("last_appraisal", ""),
             "Notice Period": c.get("notice_period") or p.get("notice_period", ""),
             "Native Location": p.get("native_location", ""),
             "Current Location": p.get("current_location", ""),
@@ -847,7 +849,7 @@ def export_candidate_tracker():
             "Interview Level": p.get("interview_level", ""),
             "Status": c.get("stage") or "",
             "Offer": p.get("offer", ""),
-            "DOJ": p.get("tentative_doj", ""),
+            "D.O.J": p.get("tentative_doj", ""),
             "Remarks": p.get("remarks", ""),
             "AI Score": c.get("ai_score") if c.get("ai_score") is not None else a.get("score", ""),
             "AI Rating": c.get("rating") or a.get("rating", ""),
@@ -862,11 +864,11 @@ def export_candidate_tracker():
     df = pd.DataFrame(export_rows)
     if df.empty:
         df = pd.DataFrame(columns=[
-            "S No","Date","Client","Position Worked","Tech Stack","Recruiter","Resource Name","Contact Number","Email",
-            "Current Company","Current Designation","Total Experience","Relevant Experience","Current Company Experience",
-            "Current CTC","Expected CTC","Offer in Hand","Last Appraisal","Notice Period","Native Location","Current Location",
+            "S No","Date","Client","Position Worked","Tech Stack","Recruter","Resource Name","Number","Mail-id",
+            "Current Company","Current Designation","Tot Exp (In Years)","Rel Exp (In Years)","Current company Exp (In Years)",
+            "CTC (In LPA)","ECTC (In LPA)","Offer In hand (if any)","Last Appraisal & Month","Notice Period","Native Location","Current Location",
             "Preferred Location","UG","Highest Qualification","LinkedIn ID","Profile Submission Date","Screening Status",
-            "Interview Level","Status","Offer","DOJ","Remarks","AI Score","AI Rating","Skill Match %","Experience Fit %",
+            "Interview Level","Status","Offer","D.O.J","Remarks","AI Score","AI Rating","Skill Match %","Experience Fit %",
             "Matched Skills","Missing Skills","Risks / Points to Verify","Suggested Screening Questions"
         ])
     with pd.ExcelWriter(out, engine="openpyxl") as writer:
