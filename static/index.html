@@ -151,7 +151,7 @@ body{background:#000!important;color:#fff}
       <button id="addCandidate" class="btn">＋ Add candidate</button>
     </div>
     <div class="card">
-      <h3>Candidate Database</h3>
+      <div class="row" style="margin-bottom:12px"><h3 style="margin:0">Candidate Database</h3><button id="exportTracker" class="btn right">↓ Download Tracker</button></div>
       <div class="toolbar"><input id="searchCand" placeholder="Search candidate or skill"/><select id="filterStage"><option value="">All stages</option><option>Sourced</option><option>Screened</option><option>Interview</option><option>Offered</option><option>Joined</option><option>Rejected</option></select></div>
       <div style="overflow:auto"><table class="table"><thead><tr><th>Name</th><th>Job</th><th>Stage</th><th>AI</th><th></th></tr></thead><tbody id="candTable"></tbody></table></div>
     </div>
@@ -264,6 +264,13 @@ async function loadCandidates(){
 }
 $('searchCand').oninput=()=>loadCandidates();
 $('filterStage').onchange=()=>loadCandidates();
+$('exportTracker').onclick=async()=>{
+  try{
+    $('exportTracker').disabled=true;$('exportTracker').textContent='Preparing Excel…';
+    const r=await fetch('/api/export/tracker');if(!r.ok)throw new Error('Could not export tracker');
+    const blob=await r.blob(),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='ShortlistAI_Candidate_Tracker.xlsx';a.click();URL.revokeObjectURL(a.href);toast('Tracker downloaded');
+  }catch(e){toast(e.message)}finally{$('exportTracker').disabled=false;$('exportTracker').textContent='↓ Download Tracker'}
+};
 
 $('addCandidate').onclick=async()=>{
   try{
@@ -350,7 +357,7 @@ $('analyze').onclick=async()=>{
     latest=d.results;
     $('results').classList.remove('hidden');$('export').classList.remove('hidden');$('method').textContent=d.methodology||'';
     $('resultList').innerHTML=d.results.map((x,i)=>`<div class="result"><div class="row"><div><b>#${i+1} ${esc(x.candidate)}</b><div class="muted">${esc(x.file||'')}</div></div><div class="right"><span style="font-size:23px;font-weight:900">${x.score}</span> <span class="badge ${x.rating}">${x.rating}</span></div></div>${renderEvaluation(x).replace('<div class="card" style="margin-top:14px">','<div style="margin-top:12px">').replace(/<\/div>$/,'</div>')}</div>`).join('');
-    $('status').textContent=`Done — ${d.results.length} candidate(s) ranked.${d.errors?.length?' '+d.errors.length+' file(s) could not be read.':''}`;
+    $('status').textContent=`Done — ${d.results.length} candidate(s) ranked.${d.duplicates_skipped?.length?' '+d.duplicates_skipped.length+' duplicate(s) not added again.':''}${d.errors?.length?' '+d.errors.length+' file(s) could not be read.':''}`;
     if($('saveATS').checked){toast('Candidates saved to ATS');loadStats()}
   }catch(e){$('status').textContent=e.message}finally{$('analyze').disabled=false;$('analyze').textContent='✦ Find best matches'}
 };
