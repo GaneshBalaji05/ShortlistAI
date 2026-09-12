@@ -1,12 +1,12 @@
 {
-  "name": "ShortlistAI Recruiter Copilot",
+  "name": "ShortlistAI ATS",
   "short_name": "ShortlistAI",
-  "description": "Rank resumes against a job description with explainable recruiter decision support.",
+  "description": "AI-powered applicant tracking and recruiter decision support.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#0b1020",
-  "theme_color": "#0b1020",
+  "background_color": "#000000",
+  "theme_color": "#000000",
   "orientation": "portrait-primary",
   "icons": [
     {"src":"/static/icons/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any maskable"},
