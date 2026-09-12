@@ -1,0 +1,35 @@
+name: Fix DOCX resume extraction
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-docx-extraction.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch DOCX extraction
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('main.py')
+          s = p.read_text(encoding='utf-8')
+          old = '''        if ext == ".docx":\n            doc = Document(io.BytesIO(data))\n            return "\\n".join(p.text for p in doc.paragraphs)'''
+          new = '''        if ext == ".docx":\n            doc = Document(io.BytesIO(data))\n            parts = []\n            # Normal paragraphs\n            parts.extend(p.text for p in doc.paragraphs if p.text and p.text.strip())\n            # Many recruiter resumes use tables for most/all content\n            for table in doc.tables:\n                for row in table.rows:\n                    for cell in row.cells:\n                        txt = cell.text.strip()\n                        if txt:\n                            parts.append(txt)\n            # Headers and footers can contain contact/profile text\n            for section in doc.sections:\n                for para in section.header.paragraphs:\n                    if para.text and para.text.strip():\n                        parts.append(para.text)\n                for para in section.footer.paragraphs:\n                    if para.text and para.text.strip():\n                        parts.append(para.text)\n            # Fallback for text boxes/shapes or unusual Word layouts: collect XML text nodes\n            if len(" ".join(parts).strip()) < 80:\n                try:\n                    xml_text = [node.text for node in doc.element.body.iter() if node.tag.endswith('}t') and node.text]\n                    parts.extend(xml_text)\n                except Exception:\n                    pass\n            return "\\n".join(parts)'''
+          if old not in s:
+              raise SystemExit('Target DOCX extraction block not found')
+          p.write_text(s.replace(old, new), encoding='utf-8')
+          PY
+      - name: Commit fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add main.py
+          git commit -m 'Improve DOCX resume extraction' || exit 0
+          git push
