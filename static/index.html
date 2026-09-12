@@ -5,8 +5,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>ShortlistAI ATS</title>
 <link rel="manifest" href="/static/manifest.webmanifest"/>
-<meta name="theme-color" content="#0b1020"/>
+<meta name="theme-color" content="#000000"/>
 <link rel="apple-touch-icon" href="/static/icons/icon-192.png"/>
+<link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png"/>
+<link rel="icon" type="image/png" sizes="512x512" href="/static/icons/icon-512.png"/>
 <style>
 :root{--bg:#0b1020;--panel:#121a30;--panel2:#18223d;--text:#f7f9ff;--muted:#9eaccb;--line:#263352;--accent:#7c9cff;--good:#50d890;--warn:#ffc857;--bad:#ff6b7a}
 *{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--text)}
@@ -49,6 +51,23 @@ body{background:radial-gradient(circle at 15% 0%,#17244d 0,#0b1020 35%);line-hei
 .badge{font-size:12px;padding:6px 10px}.badge.Strong{background:rgba(80,216,144,.12);border-color:rgba(80,216,144,.35)}.badge.Average{background:rgba(255,200,87,.12);border-color:rgba(255,200,87,.35)}.badge.Weak{background:rgba(255,107,122,.12);border-color:rgba(255,107,122,.35)}
 .scorebox{display:flex;align-items:center;gap:12px}.scorecircle{width:68px;height:68px;border-radius:50%;display:grid;place-items:center;background:#0d1428;border:4px solid var(--accent);font-size:21px;font-weight:900}.friendly-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}.friendly-metric{padding:13px;background:#0d1428;border:1px solid var(--line);border-radius:12px}.friendly-metric small{display:block;color:var(--muted);margin-bottom:3px}.friendly-metric b{font-size:18px}.progress{height:7px;background:#202b46;border-radius:999px;overflow:hidden;margin-top:8px}.progress i{display:block;height:100%;background:linear-gradient(90deg,#6587ff,#50d890);border-radius:999px}.detailsbox{margin-top:12px;border:1px solid var(--line);border-radius:12px;background:#0d1428}.detailsbox summary{cursor:pointer;padding:12px 14px;font-weight:800}.detailsbox>div{padding:0 14px 14px}.topline{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:18px}.mobile-header{display:none}.nav button::before{display:inline-block;width:25px;color:#c9d4ee}.nav button[data-tab='dashboard']::before{content:'⌂'}.nav button[data-tab='jobs']::before{content:'▣'}.nav button[data-tab='candidates']::before{content:'♟'}.nav button[data-tab='pipeline']::before{content:'⇢'}.nav button[data-tab='shortlist']::before{content:'✦'}
 @media(max-width:900px){body{padding-bottom:78px}.app{display:block}.side{position:fixed;z-index:60;bottom:0;left:0;right:0;top:auto;height:72px;padding:6px 5px;background:rgba(14,21,41,.97);backdrop-filter:blur(12px);border-top:1px solid var(--line);border-bottom:0}.brand,.install{display:none!important}.nav{height:100%;display:grid;grid-template-columns:repeat(5,1fr);gap:2px;overflow:visible}.nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4px 2px;font-size:10px;text-align:center;min-height:58px;border-radius:12px}.nav button::before{width:auto;display:block;font-size:20px;line-height:20px;margin-bottom:4px}.main{padding:18px 14px 28px}.mobile-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}.mobile-header .brand{display:block!important;margin:0;font-size:21px}.title h1{font-size:26px}.title p{font-size:14px}.stats{grid-template-columns:repeat(2,1fr);gap:10px}.stat{padding:14px}.stat b{font-size:25px}.grid2,.grid3,.eval-grid,.friendly-metrics{grid-template-columns:1fr}.card{padding:15px;border-radius:14px}.top{margin-bottom:16px}.table thead{display:none}.table,.table tbody,.table tr,.table td{display:block;width:100%}.table tr{background:#0d1428;border:1px solid var(--line);border-radius:13px;padding:12px;margin-bottom:10px}.table td{border:0;padding:5px 0}.toolbar input,.toolbar select{width:100%;min-height:44px}.modal{padding:0;align-items:end}.modalbox{width:100%;max-height:94vh;border-radius:22px 22px 0 0;padding:16px}.profile{grid-template-columns:1fr 1fr}.pipeline{grid-template-columns:repeat(6,245px);padding-bottom:8px}.col{min-height:380px}.scorecircle{width:62px;height:62px}.eval-head{align-items:flex-start}.eval-head .right{margin-left:0;width:100%}.result{padding:13px}.result .right{margin-left:0}.row{align-items:stretch}.row>.btn,.row>.ghost{flex:1}.quick-actions .btn,.quick-actions .ghost{width:100%;flex:auto}.shortlist-grid{display:block}.shortlist-grid>.card{margin-bottom:12px}}
+
+/* ShortlistAI black + red theme */
+:root{--bg:#000000;--panel:#0b0b0d;--panel2:#141416;--text:#ffffff;--muted:#a7a7ad;--line:#2a2a2f;--accent:#ff2d2d;--good:#55d98b;--warn:#ffc857;--bad:#ff4d5a;--shadow:0 18px 45px rgba(0,0,0,.48)}
+body{background:#000!important;color:#fff}
+.side{background:#050505!important;border-color:#242424!important}
+.card,.stat,.result,.cand,.modalbox,.col,.eval-block,.metric,.friendly-metric,.detailsbox,.profile div{background:#0b0b0d!important;border-color:#29292d!important}
+.field input,.field textarea,.field select,.toolbar input,.toolbar select,#noteText{background:#101012!important;border-color:#333338!important;color:#fff!important}
+.field input:focus,.field textarea:focus,.field select:focus{border-color:#ff2d2d!important;box-shadow:0 0 0 3px rgba(255,45,45,.16)!important}
+.btn{background:linear-gradient(135deg,#ff3b30,#d50000)!important;box-shadow:0 9px 24px rgba(255,45,45,.24)!important;color:#fff!important}
+.ghost{background:#111114!important;border-color:#4a2020!important;color:#fff!important}
+.ghost:hover{border-color:#ff2d2d!important;background:#1a0d0d!important}
+.danger{color:#ff5a5f!important;border-color:#5c1f22!important}
+.brand span,.eyebrow{color:#ff3434!important}.step-num{background:linear-gradient(135deg,#ff3b30,#d50000)!important}
+.nav button.active,.nav button:hover{background:#1a0b0b!important;color:#fff!important}.nav button.active{box-shadow:inset 3px 0 0 #ff2d2d}
+.nav button::before{color:#ff5555!important}.scorecircle{border-color:#ff2d2d!important;background:#101012!important}.progress i{background:linear-gradient(90deg,#ff3b30,#ff7676)!important}
+.chip{background:#121214!important;border-color:#36363b!important}.toast{background:#151516!important;border-color:#4a2020!important}.badge.Strong{background:rgba(85,217,139,.10)!important}.badge.Average{background:rgba(255,200,87,.10)!important}.badge.Weak{background:rgba(255,77,90,.10)!important}
+@media(max-width:900px){.side{background:rgba(3,3,3,.97)!important}.nav button.active{box-shadow:inset 0 3px 0 #ff2d2d}.table tr{background:#0d0d0f!important;border-color:#29292d!important}}
 
 </style>
 </head>
