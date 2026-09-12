@@ -69,6 +69,9 @@ body{background:#000!important;color:#fff}
 .chip{background:#121214!important;border-color:#36363b!important}.toast{background:#151516!important;border-color:#4a2020!important}.badge.Strong{background:rgba(85,217,139,.10)!important}.badge.Average{background:rgba(255,200,87,.10)!important}.badge.Weak{background:rgba(255,77,90,.10)!important}
 @media(max-width:900px){.side{background:rgba(3,3,3,.97)!important}.nav button.active{box-shadow:inset 0 3px 0 #ff2d2d}.table tr{background:#0d0d0f!important;border-color:#29292d!important}}
 
+
+.profile-reader{border:1px solid #3a1114;background:#100607;border-radius:14px;padding:14px;margin-bottom:16px}.profile-reader input[type=file]{width:100%;margin:8px 0 10px}.capture-status{font-size:13px;color:var(--muted);margin-top:9px}.capture-status.ok{color:#77e8a9}.capture-preview{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}.capture-item{background:#080808;border:1px solid #2b2b2b;border-radius:10px;padding:9px}.capture-item small{display:block;color:var(--muted);font-size:11px}.capture-item b{font-size:13px;word-break:break-word}.tracker-details{margin-top:12px;border-top:1px solid var(--line);padding-top:12px}.tracker-details summary{cursor:pointer;font-weight:800;color:#f4f4f4;margin-bottom:12px}@media(max-width:900px){.capture-preview{grid-template-columns:1fr}}
+
 </style>
 </head>
 <body>
@@ -118,7 +121,14 @@ body{background:#000!important;color:#fff}
   <div class="top"><div class="title"><div class="eyebrow">Talent database</div><h1>Candidates</h1><p>Search people, check AI fit, update stages and keep recruiter notes.</p></div></div>
   <div class="grid2">
     <div class="card">
-      <h3>Add candidate manually</h3><p class="helper">For faster entry, use AI Match and choose “Save candidates to ATS”.</p>
+      <h3>Add candidate</h3><p class="helper">Upload a profile and ShortlistAI will capture the candidate details automatically. Review them before saving.</p>
+      <div class="profile-reader">
+        <b>Auto-fill from profile</b><div class="helper">PDF, DOCX, TXT or MD</div>
+        <input id="profileUpload" type="file" accept=".pdf,.docx,.txt,.md"/>
+        <button id="parseProfile" class="btn" type="button">＋ Upload & capture details</button>
+        <div id="profileParseStatus" class="capture-status">No profile selected.</div>
+        <div id="profilePreview" class="capture-preview hidden"></div>
+      </div>
       <div class="grid2">
         <div class="field"><label>Name</label><input id="cName"/></div>
         <div class="field"><label>Email</label><input id="cEmail"/></div>
@@ -128,8 +138,17 @@ body{background:#000!important;color:#fff}
         <div class="field"><label>Stage</label><select id="cStage"><option>Sourced</option><option>Screened</option><option>Interview</option><option>Offered</option><option>Joined</option><option>Rejected</option></select></div>
       </div>
       <div class="field"><label>Skills</label><input id="cSkills"/></div>
+      <details class="tracker-details"><summary>Tracker details</summary>
+        <div class="grid2">
+          <div class="field"><label>Current organization</label><input id="cCurrentOrg"/></div><div class="field"><label>Current designation</label><input id="cDesignation"/></div>
+          <div class="field"><label>Relevant experience</label><input id="cRelExp"/></div><div class="field"><label>Notice period / LWD</label><input id="cNotice"/></div>
+          <div class="field"><label>Current CTC</label><input id="cCurrentCTC"/></div><div class="field"><label>Expected CTC</label><input id="cExpectedCTC"/></div>
+          <div class="field"><label>Offer in hand</label><input id="cOffers"/></div><div class="field"><label>Current location</label><input id="cCurrentLoc"/></div>
+          <div class="field"><label>Preferred location</label><input id="cPreferredLoc"/></div><div class="field"><label>LinkedIn / Profile link</label><input id="cLinkedIn"/></div>
+        </div>
+      </details>
       <div class="field"><label>Job</label><select id="cJob"><option value="">Unassigned</option></select></div>
-      <button id="addCandidate" class="btn">Add candidate</button>
+      <button id="addCandidate" class="btn">＋ Add candidate</button>
     </div>
     <div class="card">
       <h3>Candidate Database</h3>
@@ -172,7 +191,7 @@ body{background:#000!important;color:#fff}
 <script>
 const $=id=>document.getElementById(id);
 const stages=['Sourced','Screened','Interview','Offered','Joined','Rejected'];
-let jobs=[],candidates=[],latest=[];
+let jobs=[],candidates=[],latest=[],parsedProfile={},parsedResumeText="",parsedResumeFilename="";
 
 function toast(t){$('toast').textContent=t;$('toast').style.display='block';setTimeout(()=>$('toast').style.display='none',2200)}
 function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
@@ -180,6 +199,22 @@ async function api(url,opt){const r=await fetch(url,opt);const d=await r.json().
 function fmtYears(v){return v===null||v===undefined?'Not detected':`${v} yrs`}
 function chips(arr,empty='None'){return (arr&&arr.length?arr:[empty]).map(x=>`<span class="chip">${esc(x)}</span>`).join('')}
 function listItems(arr,empty='None'){return `<ul>${(arr&&arr.length?arr:[empty]).map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`}
+
+function setv(id,v){const el=$(id);if(el&&v!==undefined&&v!==null&&String(v).trim()!=="")el.value=v}
+function profilePreview(d){
+  const labels={candidate_full_name:'Name',contact_no:'Phone',email_id:'Email',total_experience:'Total experience',relevant_experience:'Relevant experience',current_organization:'Current organization',current_designation:'Current designation',current_ctc:'Current CTC',expected_ctc:'Expected CTC',notice_period:'Notice period',lwd:'LWD',current_location:'Current location',preferred_location:'Preferred location',linkedin_id:'LinkedIn',highest_qualification:'Qualification'};
+  const items=Object.entries(labels).filter(([k])=>d[k]!==undefined&&d[k]!==null&&String(d[k]).trim()!=='').slice(0,14);
+  if(!items.length){$('profilePreview').classList.add('hidden');return}
+  $('profilePreview').innerHTML=items.map(([k,l])=>`<div class="capture-item"><small>${esc(l)}</small><b>${esc(d[k])}</b></div>`).join('');$('profilePreview').classList.remove('hidden');
+}
+function mergeTrackerDetails(){return {...parsedProfile,current_organization:$('cCurrentOrg').value,current_designation:$('cDesignation').value,relevant_experience:$('cRelExp').value,notice_period:$('cNotice').value,current_ctc:$('cCurrentCTC').value,expected_ctc:$('cExpectedCTC').value,holding_offers:$('cOffers').value,current_location:$('cCurrentLoc').value,preferred_location:$('cPreferredLoc').value,linkedin_id:$('cLinkedIn').value,profile_link:$('cLinkedIn').value}}
+$('parseProfile').onclick=async()=>{
+  const f=$('profileUpload').files[0];if(!f){$('profileParseStatus').textContent='Choose a profile first.';return}
+  const fd=new FormData();fd.append('profile',f);$('parseProfile').disabled=true;$('parseProfile').textContent='Reading profile…';$('profileParseStatus').classList.remove('ok');$('profileParseStatus').textContent='Capturing candidate details…';
+  try{const r=await fetch('/api/profile/parse',{method:'POST',body:fd}),d=await r.json();if(!r.ok)throw new Error(d.detail||'Could not read profile');parsedProfile=d.details||{};parsedResumeText=d.resume_text||'';parsedResumeFilename=d.filename||f.name;
+    setv('cName',parsedProfile.candidate_full_name);setv('cEmail',parsedProfile.email_id);setv('cPhone',parsedProfile.contact_no);setv('cExp',parsedProfile.total_experience);setv('cSkills',parsedProfile.skills);setv('cSource','Profile upload');setv('cCurrentOrg',parsedProfile.current_organization);setv('cDesignation',parsedProfile.current_designation);setv('cRelExp',parsedProfile.relevant_experience);setv('cNotice',parsedProfile.notice_period||parsedProfile.lwd);setv('cCurrentCTC',parsedProfile.current_ctc);setv('cExpectedCTC',parsedProfile.expected_ctc);setv('cOffers',parsedProfile.holding_offers);setv('cCurrentLoc',parsedProfile.current_location);setv('cPreferredLoc',parsedProfile.preferred_location);setv('cLinkedIn',parsedProfile.linkedin_id||parsedProfile.profile_link);profilePreview(parsedProfile);$('profileParseStatus').textContent=`Captured ${d.detected_count||0} details. Please review before saving.`;$('profileParseStatus').classList.add('ok');
+  }catch(e){$('profileParseStatus').textContent=e.message;toast(e.message)}finally{$('parseProfile').disabled=false;$('parseProfile').textContent='＋ Upload & capture details'}
+};
 
 function showTab(id){
   document.querySelectorAll('.section').forEach(x=>x.classList.toggle('active',x.id===id));
@@ -235,9 +270,10 @@ $('addCandidate').onclick=async()=>{
     await api('/api/candidates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
       name:$('cName').value,email:$('cEmail').value,phone:$('cPhone').value,
       experience:$('cExp').value?Number($('cExp').value):null,skills:$('cSkills').value,source:$('cSource').value,
+      notice_period:$('cNotice').value,current_ctc:$('cCurrentCTC').value,expected_ctc:$('cExpectedCTC').value,resume_text:parsedResumeText,resume_filename:parsedResumeFilename,profile_details:mergeTrackerDetails(),
       job_id:$('cJob').value?Number($('cJob').value):null,stage:$('cStage').value
     })});
-    toast('Candidate added');await loadCandidates();await loadStats();
+    toast('Candidate added');parsedProfile={};parsedResumeText='';parsedResumeFilename='';$('profileUpload').value='';$('profileParseStatus').textContent='No profile selected.';$('profileParseStatus').classList.remove('ok');$('profilePreview').classList.add('hidden');await loadCandidates();await loadStats();
   }catch(e){toast(e.message)}
 };
 async function moveCand(id,stage){try{await api(`/api/candidates/${id}/stage`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({stage})});toast('Stage updated');loadStats()}catch(e){toast(e.message)}}
@@ -246,6 +282,14 @@ async function delCand(id){if(!confirm('Delete this candidate?'))return;await ap
 async function loadPipeline(){
   const all=await api('/api/candidates');
   $('pipelineBoard').innerHTML=stages.map(s=>`<div class="col"><h4>${s} <span class="muted">(${all.filter(c=>c.stage===s).length})</span></h4>${all.filter(c=>c.stage===s).map(c=>`<div class="cand" onclick="openCandidate(${c.id})"><b>${esc(c.name)}</b><small>${esc(c.job_title||'Unassigned')}</small><div style="margin-top:7px">${c.ai_score??'—'} ${c.rating?`<span class="badge ${c.rating}">${c.rating}</span>`:''}</div></div>`).join('')||'<div class="muted">No candidates</div>'}</div>`).join('');
+}
+
+
+function renderProfileDetails(d){
+  if(!d||!Object.keys(d).length)return '';
+  const labels={current_organization:'Current organization',current_designation:'Designation',relevant_experience:'Relevant experience',current_ctc:'Current CTC',expected_ctc:'Expected CTC',holding_offers:'Offer in hand',notice_period:'Notice period',lwd:'LWD',current_location:'Current location',preferred_location:'Preferred location',native_location:'Native location',ug:'UG',highest_qualification:'Qualification',linkedin_id:'LinkedIn'};
+  const items=Object.entries(labels).filter(([k])=>d[k]!==undefined&&d[k]!==null&&String(d[k]).trim()!=='');if(!items.length)return '';
+  return `<div class="card" style="margin-top:14px"><h3>Captured profile details</h3><div class="profile">${items.map(([k,l])=>`<div><small>${esc(l)}</small><b>${esc(d[k])}</b></div>`).join('')}</div><div class="helper">Auto-captured from the uploaded profile. Recruiter review is recommended.</div></div>`;
 }
 
 function renderEvaluation(e){
@@ -276,6 +320,7 @@ async function openCandidate(id){
       <div><small>Source</small><b>${esc(c.source||'—')}</b></div><div><small>Resume</small><b>${esc(c.resume_filename||'—')}</b></div><div><small>AI rating</small><b>${c.ai_score??'—'} ${c.rating?`<span class="badge ${c.rating}">${c.rating}</span>`:''}</b></div>
     </div>
     <div class="row"><button class="btn" onclick="reevaluate(${c.id})">Re-run AI evaluation</button></div>
+    ${renderProfileDetails(c.profile_details)}
     ${renderEvaluation(c.ai_evaluation)}
     <div class="card" style="margin-top:14px"><h3>Recruiter Notes</h3><div class="row"><input id="noteText" style="flex:1;background:#0d1428;border:1px solid var(--line);color:#fff;border-radius:9px;padding:10px" placeholder="Add screening or follow-up note"/><button class="ghost" onclick="addNote(${c.id})">Add note</button></div><div style="margin-top:10px">${(c.notes||[]).map(n=>`<div class="note">${esc(n.note)}<div class="muted" style="font-size:11px">${esc((n.created_at||'').replace('T',' ').slice(0,16))}</div></div>`).join('')||'<div class="muted">No notes yet.</div>'}</div></div>`;
     $('candidateModal').classList.remove('hidden');

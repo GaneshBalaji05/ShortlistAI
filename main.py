@@ -88,6 +88,7 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,candidate_id INTEGER NOT NULL,note TEXT NOT NULL,created_at TEXT NOT NULL)""")
     _ensure_column(cur, "candidates", "ai_details", "TEXT")
     _ensure_column(cur, "candidates", "resume_filename", "TEXT")
+    _ensure_column(cur, "candidates", "profile_details", "TEXT")
     con.commit()
     con.close()
 
@@ -238,6 +239,74 @@ def detect_phone(text: str) -> str:
     m = re.search(r"(?:\+?91[\s-]?)?[6-9]\d{9}", compact)
     return m.group(0) if m else ""
 
+
+def _label_value(text: str, labels: List[str], max_len: int = 100) -> str:
+    for label in labels:
+        m = re.search(rf"(?im)^\s*(?:{label})\s*[:\-–|]\s*([^\n\r]{{1,{max_len}}})", text)
+        if m:
+            value = re.sub(r"\s+", " ", m.group(1)).strip(" |:-")
+            if value:
+                return value
+    return ""
+
+def _money_value(text: str, labels: List[str]) -> str:
+    value = _label_value(text, labels, 55)
+    if value:
+        return value
+    label = "|".join(labels)
+    m = re.search(rf"(?i)(?:{label})\s*(?:is|of|:|-)?\s*(?:inr|rs\.?|₹)?\s*(\d+(?:\.\d+)?)\s*(lpa|lakhs?|lakh|lac|k|pa)?", text)
+    if not m:
+        return ""
+    return (m.group(1) + (" " + m.group(2) if m.group(2) else "")).strip()
+
+def _detect_education(text: str) -> Dict[str,str]:
+    degrees = re.findall(r"(?i)\b(?:ph\.?d|m\.?tech|m\.?e\.?|mca|mba|m\.?sc|b\.?tech|b\.?e\.?|bca|b\.?sc|bcom|b\.com|ba|b\.a)\b", text)
+    cleaned=[]
+    for d in degrees:
+        v=re.sub(r"\s+", "", d).upper().replace(".", "")
+        if v not in cleaned:
+            cleaned.append(v)
+    postgraduate = next((d for d in cleaned if d in {"PHD","MTECH","ME","MCA","MBA","MSC"}), "")
+    undergraduate = next((d for d in cleaned if d in {"BTECH","BE","BCA","BSC","BCOM","BA"}), "")
+    return {"ug": undergraduate, "highest_qualification": postgraduate or undergraduate}
+
+def extract_profile_details(text: str, filename: str) -> Dict[str,Any]:
+    edu = _detect_education(text)
+    linkedin = ""
+    m = re.search(r"(?i)(?:https?://)?(?:www\.)?linkedin\.com/in/[A-Za-z0-9_\-%/]+", text)
+    if m:
+        linkedin = m.group(0)
+        if not linkedin.lower().startswith("http"):
+            linkedin = "https://" + linkedin
+    notice = _label_value(text, [r"notice\s*period", r"np"], 45)
+    if not notice and re.search(r"(?i)\bimmediate(?:ly)?\s+(?:available|joiner|joining)\b|\bimmediate joiner\b", text):
+        notice = "Immediate"
+    details = {
+        "candidate_full_name": detect_name(text, filename),
+        "contact_no": detect_phone(text),
+        "email_id": detect_email(text),
+        "total_experience": parse_candidate_years(text),
+        "relevant_experience": _label_value(text, [r"relevant\s*(?:experience|exp)"], 40),
+        "current_organization": _label_value(text, [r"current\s*(?:organization|organisation|company)", r"present\s*(?:organization|organisation|company)"], 90),
+        "current_designation": _label_value(text, [r"current\s*(?:designation|role|title)", r"designation", r"job\s*title"], 90),
+        "current_company_experience": _label_value(text, [r"current\s*company\s*(?:experience|exp)"], 40),
+        "current_ctc": _money_value(text, [r"current\s*ctc", r"present\s*ctc"]),
+        "expected_ctc": _money_value(text, [r"expected\s*ctc", r"expecting\s*ctc"]),
+        "holding_offers": _label_value(text, [r"holding\s*offers?", r"offers?\s*in\s*hand", r"offer\s*in\s*hand"], 80),
+        "notice_period": notice,
+        "lwd": _label_value(text, [r"lwd", r"last\s*working\s*day"], 45),
+        "tentative_doj": _label_value(text, [r"tentative\s*doj", r"date\s*of\s*joining", r"doj"], 45),
+        "native_location": _label_value(text, [r"native\s*location", r"native\s*place"], 60),
+        "current_location": _label_value(text, [r"current\s*location", r"present\s*location"], 60),
+        "preferred_location": _label_value(text, [r"preferred\s*location", r"preferred\s*locations"], 100),
+        "linkedin_id": linkedin,
+        "profile_link": linkedin,
+        "ug": edu["ug"],
+        "highest_qualification": edu["highest_qualification"],
+        "skills": ", ".join(find_skills(text)),
+    }
+    return details
+
 def semantic_scores(jd: str, resumes: List[str]) -> List[float]:
     try:
         mat = TfidfVectorizer(stop_words="english", ngram_range=(1,2), max_features=12000).fit_transform(
@@ -348,6 +417,7 @@ def _decode_ai_details(value: Optional[str]):
 def _candidate_dict(row: sqlite3.Row) -> Dict[str,Any]:
     d = dict(row)
     d["ai_evaluation"] = _decode_ai_details(d.pop("ai_details", None))
+    d["profile_details"] = _decode_ai_details(d.get("profile_details")) or {}
     return d
 
 @app.get("/", response_class=HTMLResponse)
@@ -371,6 +441,9 @@ class CandidateIn(BaseModel):
     notice_period: str = ""
     current_ctc: str = ""
     expected_ctc: str = ""
+    resume_text: str = ""
+    resume_filename: str = ""
+    profile_details: Optional[Dict[str,Any]] = None
     job_id: Optional[int] = None
     stage: str = "Sourced"
 
@@ -382,6 +455,21 @@ class NoteIn(BaseModel):
 
 class ExportPayload(BaseModel):
     results: List[Dict[str,Any]]
+
+
+@app.post("/api/profile/parse")
+async def parse_profile(profile: UploadFile = File(...)):
+    name = profile.filename or "resume"
+    data = await profile.read()
+    try:
+        text = extract_text(name, data)
+    except Exception as e:
+        raise HTTPException(400, str(e))
+    if len(text.strip()) < 80:
+        raise HTTPException(400, "Very little readable text was found in this profile. Try a text-based PDF or DOCX.")
+    details = extract_profile_details(text, name)
+    detected = [k for k,v in details.items() if v not in (None, "", [])]
+    return {"filename": name,"details": details,"detected_count": len(detected),"detected_fields": detected,"resume_text": text,"message": "Profile details captured. Review the auto-filled fields before saving."}
 
 @app.get("/api/stats")
 def stats():
@@ -474,10 +562,10 @@ def create_candidate(x: CandidateIn):
     con = db()
     cur = con.cursor()
     cur.execute(
-        """INSERT INTO candidates(name,email,phone,experience,skills,source,notice_period,current_ctc,
-           expected_ctc,job_id,stage,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (x.name,x.email,x.phone,x.experience,x.skills,x.source,x.notice_period,x.current_ctc,
-         x.expected_ctc,x.job_id,x.stage,now,now)
+        """INSERT INTO candidates(name,email,phone,experience,skills,resume_text,resume_filename,source,notice_period,current_ctc,
+           expected_ctc,profile_details,job_id,stage,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (x.name,x.email,x.phone,x.experience,x.skills,x.resume_text,x.resume_filename,x.source,x.notice_period,x.current_ctc,
+         x.expected_ctc,json.dumps(x.profile_details or {}),x.job_id,x.stage,now,now)
     )
     con.commit()
     i = cur.lastrowid
@@ -592,11 +680,11 @@ async def analyze(
             skills = ", ".join(find_skills(txt))
             con.execute(
                 """INSERT INTO candidates(name,email,phone,experience,skills,resume_text,resume_filename,
-                   source,job_id,stage,ai_score,rating,ai_details,created_at,updated_at)
-                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   source,job_id,stage,ai_score,rating,ai_details,profile_details,created_at,updated_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (s["candidate"], detect_email(txt), detect_phone(txt), s["candidate_years"], skills,
                  txt, name, "Resume upload", job_id, "Sourced", s["score"], s["rating"],
-                 json.dumps(s), now, now)
+                 json.dumps(s), json.dumps(extract_profile_details(txt, name)), now, now)
             )
     if con:
         con.commit()
