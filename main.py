@@ -13,6 +13,7 @@ from pypdf import PdfReader
 from docx import Document
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+from shortlistai_talent import classify_talent_pools, encode_talent_pools, decode_talent_pools
 from shortlistai_test_seed import seed_test_candidate
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -87,9 +88,12 @@ def init_db():
         job_id INTEGER,stage TEXT DEFAULT 'Sourced',ai_score REAL,rating TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)""")
     cur.execute("""CREATE TABLE IF NOT EXISTS notes(
         id INTEGER PRIMARY KEY AUTOINCREMENT,candidate_id INTEGER NOT NULL,note TEXT NOT NULL,created_at TEXT NOT NULL)""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS activity_log(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,candidate_id INTEGER NOT NULL,action TEXT NOT NULL,details TEXT,created_at TEXT NOT NULL)""")
     _ensure_column(cur, "candidates", "ai_details", "TEXT")
     _ensure_column(cur, "candidates", "resume_filename", "TEXT")
     _ensure_column(cur, "candidates", "profile_details", "TEXT")
+    _ensure_column(cur, "candidates", "talent_pools", "TEXT")
     con.commit()
     con.close()
 
@@ -488,6 +492,14 @@ def _candidate_dict(row: sqlite3.Row) -> Dict[str,Any]:
     d = dict(row)
     d["ai_evaluation"] = _decode_ai_details(d.pop("ai_details", None))
     d["profile_details"] = _decode_ai_details(d.get("profile_details")) or {}
+    pools = decode_talent_pools(d.get("talent_pools"))
+    if not pools:
+        pools = classify_talent_pools(
+            d.get("resume_text") or "",
+            d.get("skills") or "",
+            json.dumps(d.get("profile_details") or {}, ensure_ascii=False),
+        )
+    d["talent_pools"] = pools
     return d
 
 
@@ -504,6 +516,13 @@ def _candidate_duplicate(con: sqlite3.Connection, email: str = "", phone: str = 
             if re.sub(r"\D", "", row["phone"] or "")[-10:] == phone_digits:
                 return row
     return None
+
+def _log_activity(con: sqlite3.Connection, candidate_id: int, action: str, details: str = "") -> None:
+    con.execute(
+        "INSERT INTO activity_log(candidate_id,action,details,created_at) VALUES(?,?,?,?)",
+        (candidate_id, action, details, datetime.utcnow().isoformat()),
+    )
+
 
 @app.get("/", response_class=HTMLResponse)
 def home():
@@ -531,6 +550,24 @@ class CandidateIn(BaseModel):
     profile_details: Optional[Dict[str,Any]] = None
     job_id: Optional[int] = None
     stage: str = "Sourced"
+    talent_pools: Optional[List[str]] = None
+
+class CandidateUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    experience: Optional[float] = None
+    skills: Optional[str] = None
+    source: Optional[str] = None
+    notice_period: Optional[str] = None
+    current_ctc: Optional[str] = None
+    expected_ctc: Optional[str] = None
+    resume_text: Optional[str] = None
+    resume_filename: Optional[str] = None
+    profile_details: Optional[Dict[str,Any]] = None
+    talent_pools: Optional[List[str]] = None
+    job_id: Optional[int] = None
+    stage: Optional[str] = None
 
 class StageIn(BaseModel):
     stage: str
@@ -577,6 +614,18 @@ def list_jobs():
     con.close()
     return rows
 
+@app.get("/api/talent-pools")
+def list_talent_pools():
+    con = db()
+    rows = [_candidate_dict(x) for x in con.execute("SELECT * FROM candidates ORDER BY id DESC")]
+    con.close()
+    counts: Dict[str,int] = {}
+    for row in rows:
+        for pool in row.get("talent_pools") or []:
+            counts[pool] = counts.get(pool, 0) + 1
+    return [{"name": name, "count": count} for name, count in sorted(counts.items(), key=lambda x: (-x[1], x[0].lower()))]
+
+
 @app.post("/api/jobs")
 def create_job(x: JobIn):
     if len(x.jd.strip()) < 20:
@@ -601,7 +650,16 @@ def delete_job(job_id: int):
     return {"ok": True}
 
 @app.get("/api/candidates")
-def list_candidates(job_id: Optional[int]=None, stage: Optional[str]=None, q: Optional[str]=None):
+def list_candidates(
+    job_id: Optional[int] = None,
+    stage: Optional[str] = None,
+    q: Optional[str] = None,
+    talent_pool: Optional[str] = None,
+    min_experience: Optional[float] = None,
+    max_experience: Optional[float] = None,
+    location: Optional[str] = None,
+    notice_period: Optional[str] = None,
+):
     sql = """SELECT c.*,j.title job_title FROM candidates c
              LEFT JOIN jobs j ON j.id=c.job_id WHERE 1=1"""
     args: List[Any] = []
@@ -611,14 +669,36 @@ def list_candidates(job_id: Optional[int]=None, stage: Optional[str]=None, q: Op
     if stage:
         sql += " AND c.stage=?"
         args.append(stage)
-    if q:
-        sql += " AND (c.name LIKE ? OR c.email LIKE ? OR c.skills LIKE ?)"
-        v = f"%{q}%"
-        args += [v,v,v]
     sql += " ORDER BY COALESCE(c.ai_score,0) DESC,c.id DESC"
     con = db()
     rows = [_candidate_dict(x) for x in con.execute(sql, args)]
     con.close()
+
+    if q:
+        term = q.strip().lower()
+        rows = [r for r in rows if term in " ".join([
+            str(r.get("name") or ""), str(r.get("email") or ""), str(r.get("phone") or ""),
+            str(r.get("skills") or ""), str(r.get("job_title") or ""),
+            json.dumps(r.get("profile_details") or {}, ensure_ascii=False),
+            " ".join(r.get("talent_pools") or []),
+        ]).lower()]
+    if talent_pool:
+        wanted = talent_pool.strip().lower()
+        rows = [r for r in rows if any(p.lower() == wanted for p in (r.get("talent_pools") or []))]
+    if min_experience is not None:
+        rows = [r for r in rows if r.get("experience") is not None and float(r["experience"]) >= min_experience]
+    if max_experience is not None:
+        rows = [r for r in rows if r.get("experience") is not None and float(r["experience"]) <= max_experience]
+    if location:
+        wanted = location.strip().lower()
+        rows = [r for r in rows if wanted in " ".join([
+            str((r.get("profile_details") or {}).get("current_location") or ""),
+            str((r.get("profile_details") or {}).get("preferred_location") or ""),
+            str((r.get("profile_details") or {}).get("native_location") or ""),
+        ]).lower()]
+    if notice_period:
+        wanted = notice_period.strip().lower()
+        rows = [r for r in rows if wanted in str(r.get("notice_period") or (r.get("profile_details") or {}).get("notice_period") or "").lower()]
     return rows
 
 @app.get("/api/candidates/{candidate_id}")
@@ -636,6 +716,9 @@ def get_candidate(candidate_id: int):
     out["notes"] = [dict(x) for x in con.execute(
         "SELECT * FROM notes WHERE candidate_id=? ORDER BY id DESC", (candidate_id,)
     )]
+    out["activity"] = [dict(x) for x in con.execute(
+        "SELECT * FROM activity_log WHERE candidate_id=? ORDER BY id DESC", (candidate_id,)
+    )]
     con.close()
     return out
 
@@ -650,27 +733,99 @@ def create_candidate(x: CandidateIn):
         name = duplicate["name"] or "Existing candidate"
         con.close()
         raise HTTPException(409, f"Possible duplicate candidate: {name} already exists in the ATS.")
+    profile = x.profile_details or {}
+    pools = x.talent_pools if x.talent_pools is not None else classify_talent_pools(
+        x.resume_text, x.skills, json.dumps(profile, ensure_ascii=False)
+    )
     cur = con.cursor()
     cur.execute(
         """INSERT INTO candidates(name,email,phone,experience,skills,resume_text,resume_filename,source,notice_period,current_ctc,
-           expected_ctc,profile_details,job_id,stage,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           expected_ctc,profile_details,talent_pools,job_id,stage,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (x.name,x.email,x.phone,x.experience,x.skills,x.resume_text,x.resume_filename,x.source,x.notice_period,x.current_ctc,
-         x.expected_ctc,json.dumps(x.profile_details or {}),x.job_id,x.stage,now,now)
+         x.expected_ctc,json.dumps(profile),encode_talent_pools(pools),x.job_id,x.stage,now,now)
     )
-    con.commit()
     i = cur.lastrowid
+    _log_activity(con, i, "Candidate created", f"Stage: {x.stage}")
+    con.commit()
     con.close()
-    return {"id": i}
+    return {"id": i, "talent_pools": pools}
+
+@app.patch("/api/candidates/{candidate_id}")
+def update_candidate(candidate_id: int, x: CandidateUpdate):
+    con = db()
+    row = con.execute("SELECT * FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+    if not row:
+        con.close()
+        raise HTTPException(404, "Candidate not found")
+    current = dict(row)
+    data = x.dict(exclude_unset=True)
+    if "stage" in data and data["stage"] is not None and data["stage"] not in STAGES:
+        con.close()
+        raise HTTPException(400, "Invalid stage")
+
+    if "email" in data or "phone" in data:
+        duplicate = _candidate_duplicate(
+            con,
+            data.get("email", current.get("email") or ""),
+            data.get("phone", current.get("phone") or ""),
+        )
+        if duplicate and duplicate["id"] != candidate_id:
+            name = duplicate["name"] or "Existing candidate"
+            con.close()
+            raise HTTPException(409, f"Possible duplicate candidate: {name} already exists in the ATS.")
+
+    existing_profile = _decode_ai_details(current.get("profile_details")) or {}
+    if "profile_details" in data:
+        incoming_profile = data.pop("profile_details") or {}
+        existing_profile.update(incoming_profile)
+        data["profile_details"] = json.dumps(existing_profile)
+
+    explicit_pools = data.pop("talent_pools", None) if "talent_pools" in data else None
+    if explicit_pools is not None:
+        data["talent_pools"] = encode_talent_pools(explicit_pools)
+    elif any(k in data for k in ("skills", "resume_text", "profile_details")):
+        skills = data.get("skills", current.get("skills") or "")
+        resume_text = data.get("resume_text", current.get("resume_text") or "")
+        profile_json = data.get("profile_details", current.get("profile_details") or "{}")
+        data["talent_pools"] = encode_talent_pools(classify_talent_pools(resume_text, skills, profile_json))
+
+    allowed = {
+        "name","email","phone","experience","skills","source","notice_period","current_ctc","expected_ctc",
+        "resume_text","resume_filename","profile_details","talent_pools","job_id","stage"
+    }
+    updates, values, changed = [], [], []
+    for key, value in data.items():
+        if key not in allowed:
+            continue
+        updates.append(f"{key}=?")
+        values.append(value)
+        changed.append(key)
+    if not updates:
+        con.close()
+        return {"ok": True, "changed": []}
+    updates.append("updated_at=?")
+    values.append(datetime.utcnow().isoformat())
+    values.append(candidate_id)
+    con.execute(f"UPDATE candidates SET {', '.join(updates)} WHERE id=?", values)
+    _log_activity(con, candidate_id, "Candidate updated", "Updated fields: " + ", ".join(changed))
+    con.commit()
+    updated = con.execute("SELECT * FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+    out = _candidate_dict(updated)
+    con.close()
+    return {"ok": True, "changed": changed, "candidate": out}
 
 @app.patch("/api/candidates/{candidate_id}/stage")
 def update_stage(candidate_id: int, x: StageIn):
     if x.stage not in STAGES:
         raise HTTPException(400, "Invalid stage")
     con = db()
+    old = con.execute("SELECT stage FROM candidates WHERE id=?", (candidate_id,)).fetchone()
     con.execute(
         "UPDATE candidates SET stage=?,updated_at=? WHERE id=?",
         (x.stage, datetime.utcnow().isoformat(), candidate_id)
     )
+    if old:
+        _log_activity(con, candidate_id, "Stage changed", f"{old['stage']} → {x.stage}")
     con.commit()
     con.close()
     return {"ok": True}
@@ -702,6 +857,7 @@ def add_note(candidate_id: int, x: NoteIn):
         "INSERT INTO notes(candidate_id,note,created_at) VALUES(?,?,?)",
         (candidate_id, x.note.strip(), datetime.utcnow().isoformat())
     )
+    _log_activity(con, candidate_id, "Recruiter note added", x.note.strip()[:180])
     con.commit()
     con.close()
     return {"ok": True}
