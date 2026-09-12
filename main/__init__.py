@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 
 from fastapi.responses import HTMLResponse
+from demo_database_seed import seed_demo_database
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 LEGACY_MAIN = PROJECT_ROOT / "main.py"
@@ -37,6 +38,12 @@ app.router.routes = [
     route for route in app.router.routes
     if not (getattr(route, "path", None) == "/" and "GET" in (getattr(route, "methods", set()) or set()))
 ]
+
+
+@app.on_event("startup")
+def seed_product_demo_data():
+    """Populate the development build with idempotent fictional ATS data."""
+    seed_demo_database(legacy.DB_PATH)
 
 
 @app.get("/", response_class=HTMLResponse)
