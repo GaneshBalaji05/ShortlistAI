@@ -11,10 +11,12 @@ import importlib.util
 import json
 import sys
 from collections import Counter
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from demo_database_seed import seed_demo_database
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -47,6 +49,36 @@ app.router.routes = [
 def seed_product_demo_data():
     """Populate the development build with idempotent fictional ATS data."""
     seed_demo_database(legacy.DB_PATH)
+
+
+@app.on_event("startup")
+def ensure_interview_storage():
+    """Create interview scheduling storage without changing the legacy ATS schema."""
+    con = legacy.db()
+    con.execute(
+        """CREATE TABLE IF NOT EXISTS interviews(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            candidate_id INTEGER NOT NULL,
+            job_id INTEGER,
+            round_name TEXT NOT NULL,
+            interviewer_name TEXT DEFAULT '',
+            interviewer_email TEXT DEFAULT '',
+            scheduled_at TEXT NOT NULL,
+            timezone TEXT DEFAULT 'Asia/Kolkata',
+            duration_minutes INTEGER DEFAULT 45,
+            meeting_url TEXT DEFAULT '',
+            status TEXT DEFAULT 'Scheduled',
+            outcome TEXT DEFAULT 'Pending',
+            notes TEXT DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(candidate_id) REFERENCES candidates(id) ON DELETE CASCADE
+        )"""
+    )
+    con.execute("CREATE INDEX IF NOT EXISTS idx_interviews_candidate ON interviews(candidate_id)")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_interviews_scheduled ON interviews(scheduled_at)")
+    con.commit()
+    con.close()
 
 
 def _safe_json(value: str | None) -> dict:
@@ -211,6 +243,244 @@ def update_interview_status(candidate_id: int, payload: dict):
     return {"candidate_id": candidate_id, "l1_status": l1, "l2_status": l2}
 
 
+def _interview_select() -> str:
+    return """SELECT i.*,c.name AS candidate_name,c.email AS candidate_email,
+                     j.title AS job_title
+              FROM interviews i
+              JOIN candidates c ON c.id=i.candidate_id
+              LEFT JOIN jobs j ON j.id=i.job_id"""
+
+
+def _interview_dict(row) -> dict:
+    return {
+        "id": int(row["id"]),
+        "candidate_id": int(row["candidate_id"]),
+        "candidate_name": row["candidate_name"],
+        "candidate_email": row["candidate_email"] or "",
+        "job_id": row["job_id"],
+        "job_title": row["job_title"] or "Unassigned",
+        "round_name": row["round_name"],
+        "interviewer_name": row["interviewer_name"] or "",
+        "interviewer_email": row["interviewer_email"] or "",
+        "scheduled_at": row["scheduled_at"],
+        "timezone": row["timezone"] or "Asia/Kolkata",
+        "duration_minutes": int(row["duration_minutes"] or 45),
+        "meeting_url": row["meeting_url"] or "",
+        "status": row["status"] or "Scheduled",
+        "outcome": row["outcome"] or "Pending",
+        "notes": row["notes"] or "",
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _sync_candidate_round(con, candidate_id: int, round_name: str, state: str) -> None:
+    row = con.execute("SELECT profile_details FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+    if not row:
+        return
+    details = _safe_json(row["profile_details"])
+    round_key = str(round_name or "").strip().upper()
+    if round_key.startswith("L1"):
+        details["l1_status"] = state
+        if state == "Cleared" and not details.get("l2_status"):
+            details["l2_status"] = "Pending Scheduling"
+        details["interview_level"] = "L1 Cleared" if state == "Cleared" else f"L1 {state}"
+    elif round_key.startswith("L2"):
+        details["l2_status"] = state
+        details["interview_level"] = "L2 Cleared" if state == "Cleared" else f"L2 {state}"
+    con.execute(
+        "UPDATE candidates SET profile_details=?,updated_at=datetime('now') WHERE id=?",
+        (json.dumps(details), candidate_id),
+    )
+
+
+@app.get("/api/interviews")
+def list_interviews(candidate_id: int | None = None, job_id: int | None = None, status: str = ""):
+    con = legacy.db()
+    sql = _interview_select() + " WHERE 1=1"
+    params: list = []
+    if candidate_id is not None:
+        sql += " AND i.candidate_id=?"
+        params.append(candidate_id)
+    if job_id is not None:
+        sql += " AND i.job_id=?"
+        params.append(job_id)
+    if status.strip():
+        sql += " AND i.status=?"
+        params.append(status.strip())
+    sql += " ORDER BY i.scheduled_at ASC,i.id DESC"
+    rows = con.execute(sql, params).fetchall()
+    con.close()
+    return [_interview_dict(row) for row in rows]
+
+
+@app.post("/api/interviews")
+def create_interview(payload: dict):
+    try:
+        candidate_id = int(payload.get("candidate_id"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Candidate is required")
+    round_name = str(payload.get("round_name") or "").strip()
+    scheduled_at = str(payload.get("scheduled_at") or "").strip()
+    if not round_name:
+        raise HTTPException(status_code=400, detail="Interview round is required")
+    if not scheduled_at:
+        raise HTTPException(status_code=400, detail="Interview date and time are required")
+    try:
+        datetime.fromisoformat(scheduled_at.replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid interview date/time")
+
+    timezone_name = str(payload.get("timezone") or "Asia/Kolkata").strip()
+    try:
+        ZoneInfo(timezone_name)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid timezone")
+    try:
+        duration = int(payload.get("duration_minutes") or 45)
+    except Exception:
+        duration = 45
+    if duration < 15 or duration > 240:
+        raise HTTPException(status_code=400, detail="Duration must be between 15 and 240 minutes")
+
+    con = legacy.db()
+    candidate = con.execute("SELECT id,job_id FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+    if not candidate:
+        con.close()
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    now = datetime.now(timezone.utc).isoformat()
+    cur = con.execute(
+        """INSERT INTO interviews(
+            candidate_id,job_id,round_name,interviewer_name,interviewer_email,
+            scheduled_at,timezone,duration_minutes,meeting_url,status,outcome,notes,
+            created_at,updated_at
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (
+            candidate_id,candidate["job_id"],round_name,
+            str(payload.get("interviewer_name") or "").strip(),
+            str(payload.get("interviewer_email") or "").strip(),
+            scheduled_at,timezone_name,duration,
+            str(payload.get("meeting_url") or "").strip(),
+            "Scheduled","Pending",str(payload.get("notes") or "").strip(),now,now,
+        ),
+    )
+    _sync_candidate_round(con, candidate_id, round_name, "Scheduled")
+    con.commit()
+    row = con.execute(_interview_select() + " WHERE i.id=?", (cur.lastrowid,)).fetchone()
+    con.close()
+    return _interview_dict(row)
+
+
+@app.patch("/api/interviews/{interview_id}")
+def update_interview(interview_id: int, payload: dict):
+    allowed_status = {"Scheduled", "Completed", "Cancelled"}
+    allowed_outcome = {"Pending", "Cleared", "Rejected"}
+    con = legacy.db()
+    existing = con.execute("SELECT * FROM interviews WHERE id=?", (interview_id,)).fetchone()
+    if not existing:
+        con.close()
+        raise HTTPException(status_code=404, detail="Interview not found")
+
+    fields = {
+        "round_name": existing["round_name"],
+        "interviewer_name": existing["interviewer_name"],
+        "interviewer_email": existing["interviewer_email"],
+        "scheduled_at": existing["scheduled_at"],
+        "timezone": existing["timezone"],
+        "duration_minutes": existing["duration_minutes"],
+        "meeting_url": existing["meeting_url"],
+        "status": existing["status"],
+        "outcome": existing["outcome"],
+        "notes": existing["notes"],
+    }
+    for key in fields:
+        if key in payload and payload[key] is not None:
+            fields[key] = payload[key]
+
+    fields["status"] = str(fields["status"] or "Scheduled").strip()
+    fields["outcome"] = str(fields["outcome"] or "Pending").strip()
+    if fields["status"] not in allowed_status:
+        con.close()
+        raise HTTPException(status_code=400, detail="Invalid interview status")
+    if fields["outcome"] not in allowed_outcome:
+        con.close()
+        raise HTTPException(status_code=400, detail="Invalid interview outcome")
+    try:
+        datetime.fromisoformat(str(fields["scheduled_at"]).replace("Z", "+00:00"))
+        ZoneInfo(str(fields["timezone"] or "Asia/Kolkata"))
+        fields["duration_minutes"] = int(fields["duration_minutes"] or 45)
+    except Exception:
+        con.close()
+        raise HTTPException(status_code=400, detail="Invalid schedule details")
+
+    con.execute(
+        """UPDATE interviews SET round_name=?,interviewer_name=?,interviewer_email=?,
+           scheduled_at=?,timezone=?,duration_minutes=?,meeting_url=?,status=?,outcome=?,notes=?,
+           updated_at=? WHERE id=?""",
+        (
+            str(fields["round_name"] or "").strip(),
+            str(fields["interviewer_name"] or "").strip(),
+            str(fields["interviewer_email"] or "").strip(),
+            str(fields["scheduled_at"]).strip(),str(fields["timezone"]).strip(),
+            fields["duration_minutes"],str(fields["meeting_url"] or "").strip(),
+            fields["status"],fields["outcome"],str(fields["notes"] or "").strip(),
+            datetime.now(timezone.utc).isoformat(),interview_id,
+        ),
+    )
+    if fields["outcome"] in {"Cleared", "Rejected"}:
+        _sync_candidate_round(con, int(existing["candidate_id"]), str(fields["round_name"]), fields["outcome"])
+    elif fields["status"] == "Scheduled":
+        _sync_candidate_round(con, int(existing["candidate_id"]), str(fields["round_name"]), "Scheduled")
+    con.commit()
+    row = con.execute(_interview_select() + " WHERE i.id=?", (interview_id,)).fetchone()
+    con.close()
+    return _interview_dict(row)
+
+
+def _ics_escape(value: str) -> str:
+    return str(value or "").replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\r\n", "\\n").replace("\n", "\\n")
+
+
+@app.get("/api/interviews/{interview_id}/calendar.ics")
+def interview_calendar(interview_id: int):
+    con = legacy.db()
+    row = con.execute(_interview_select() + " WHERE i.id=?", (interview_id,)).fetchone()
+    con.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Interview not found")
+    item = _interview_dict(row)
+    try:
+        start = datetime.fromisoformat(item["scheduled_at"].replace("Z", "+00:00"))
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=ZoneInfo(item["timezone"]))
+        start_utc = start.astimezone(timezone.utc)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Interview schedule is invalid")
+    end_utc = start_utc + timedelta(minutes=item["duration_minutes"])
+    description = f"Candidate: {item['candidate_name']}\nRound: {item['round_name']}\nInterviewer: {item['interviewer_name']}"
+    if item["meeting_url"]:
+        description += f"\nMeeting: {item['meeting_url']}"
+    if item["notes"]:
+        description += f"\nNotes: {item['notes']}"
+    lines = [
+        "BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//ShortlistAI//Interview//EN","CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH","BEGIN:VEVENT",
+        f"UID:shortlistai-interview-{item['id']}@shortlistai",
+        f"DTSTAMP:{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}",
+        f"DTSTART:{start_utc.strftime('%Y%m%dT%H%M%SZ')}",
+        f"DTEND:{end_utc.strftime('%Y%m%dT%H%M%SZ')}",
+        f"SUMMARY:{_ics_escape(item['round_name'] + ' Interview - ' + item['candidate_name'])}",
+        f"DESCRIPTION:{_ics_escape(description)}",
+        f"LOCATION:{_ics_escape(item['meeting_url'])}",
+        "END:VEVENT","END:VCALENDAR","",
+    ]
+    return Response(
+        content="\r\n".join(lines),
+        media_type="text/calendar; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="ShortlistAI-Interview-{item["id"]}.ics"'},
+    )
+
+
 @app.get("/", response_class=HTMLResponse)
 def login_page():
     return (BASE_DIR / "static" / "login.html").read_text(encoding="utf-8")
@@ -222,11 +492,13 @@ def ats_workspace():
     html = html.replace(
         "</head>",
         '<link rel="stylesheet" href="/static/theme-v2.css?v=2"/>\n'
-        '<link rel="stylesheet" href="/static/dashboard-v2.css?v=1"/>\n</head>'
+        '<link rel="stylesheet" href="/static/dashboard-v2.css?v=1"/>\n'
+        '<link rel="stylesheet" href="/static/interviews-v1.css?v=1"/>\n</head>'
     )
     html = html.replace(
         "</body>",
         '<script src="/static/theme-v2.js?v=2"></script>\n'
-        '<script src="/static/dashboard-v2.js?v=1"></script>\n</body>'
+        '<script src="/static/dashboard-v2.js?v=1"></script>\n'
+        '<script src="/static/interviews-v1.js?v=1"></script>\n</body>'
     )
     return html
