@@ -6,7 +6,7 @@
 <title>Sign in · ShortlistAI</title>
 <meta name="theme-color" content="#050505"/>
 <link rel="manifest" href="/static/manifest.webmanifest"/>
-<link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png"/>
+<link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192-v3.png"/>
 <style>
 :root{
   --bg:#050505;--panel:#0c0c0e;--panel2:#121214;--line:#29292e;--line2:#3b1d20;
@@ -115,5 +115,6 @@ function showError(msg){$('error').classList.remove('success');$('error').textCo
 function syncView(){const mobile=matchMedia('(max-width:900px)').matches,desktop=mobile&&localStorage.getItem('shortlistai-login-view')==='desktop';document.body.classList.toggle('force-desktop',desktop);$('viewToggle').textContent=desktop?'Mobile View':'Desktop View'}
 $('viewToggle').onclick=()=>{const desktop=document.body.classList.contains('force-desktop');localStorage.setItem('shortlistai-login-view',desktop?'mobile':'desktop');syncView();scrollTo({top:0,left:0,behavior:'smooth'})};addEventListener('resize',syncView);syncView();
 </script>
+<script>if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js',{scope:'/'}).catch(()=>{}));</script>
 </body>
 </html>

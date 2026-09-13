@@ -1,8 +1,8 @@
-const CACHE = 'shortlistai-v4';
+const CACHE = 'shortlistai-v5';
 const APP_SHELL = [
   '/static/manifest.webmanifest',
-  '/static/icons/icon-192-v2.png',
-  '/static/icons/icon-512-v2.png'
+  '/static/icons/icon-192-v3.png',
+  '/static/icons/icon-512-v3.png'
 ];
 
 self.addEventListener('install', event => {
