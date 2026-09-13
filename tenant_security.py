@@ -124,6 +124,13 @@ def current_workspace() -> int:
     return int(value)
 
 
+def current_user() -> int:
+    value = _user.get()
+    if value is None:
+        raise HTTPException(401, "Authentication required")
+    return int(value)
+
+
 def _read_sql(sql: str) -> str:
     for table, view in VIEWS.items():
         sql = re.sub(rf"(?i)\b{re.escape(table)}\b", view, sql)
