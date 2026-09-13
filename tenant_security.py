@@ -124,6 +124,13 @@ def current_workspace() -> int:
     return int(value)
 
 
+def current_user() -> int:
+    value = _user.get()
+    if value is None:
+        raise HTTPException(401, "Authentication required")
+    return int(value)
+
+
 def _read_sql(sql: str) -> str:
     for table, view in VIEWS.items():
         sql = re.sub(rf"(?i)\b{re.escape(table)}\b", view, sql)
@@ -293,6 +300,12 @@ class SessionTenantMiddleware:
 
 
 def install(app) -> None:
+    # Route registration must happen before importing the legacy main package. Importing
+    # main can re-enter auth/security installation; installing v1 first makes that cycle
+    # harmless and ensures the passed application always receives the complete router.
+    from shortlistai.api.v1 import install_api_v1
+    install_api_v1(app)
+
     try:
         import main
         legacy = getattr(main, "legacy", None)
@@ -300,6 +313,7 @@ def install(app) -> None:
             legacy.db = workspace_db
     except Exception:
         pass
+
     if getattr(app.state, "shortlistai_tenant_security", False):
         return
     app.user_middleware.insert(0, Middleware(SessionTenantMiddleware))
