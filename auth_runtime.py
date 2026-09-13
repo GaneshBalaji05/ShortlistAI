@@ -10,10 +10,13 @@ import sqlite3
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 from pathlib import Path
-from typing import Optional
+from typing import Mapping, Optional
 
 from fastapi import HTTPException, Request, Response
 from pydantic import BaseModel
+
+from shortlistai.db.repositories import AuthRepository, RepositoryConflict
+from shortlistai.db.runtime import get_engine_for_url, is_postgres_url, normalize_database_url
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = os.getenv("SQLITE_PATH", str(BASE_DIR / "shortlistai.db"))
@@ -52,13 +55,32 @@ class ResetPasswordIn(BaseModel):
     confirm_password: str
 
 
+def _auth_database_url() -> str:
+    configured = normalize_database_url(os.getenv("DATABASE_URL", ""))
+    if configured:
+        return configured
+    return f"sqlite:///{Path(DB_PATH).resolve()}"
+
+
+def _repository() -> AuthRepository:
+    return AuthRepository(get_engine_for_url(_auth_database_url()))
+
+
 def _connect() -> sqlite3.Connection:
+    """Legacy SQLite compatibility connection.
+
+    Remaining legacy ATS/tenant migration code still calls this helper. Auth API routes no
+    longer depend on it. It can be removed after the final SQLite-only paths are migrated.
+    """
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
     return con
 
 
 def _ensure_auth_schema() -> None:
+    """Maintain the rollback SQLite auth schema; PostgreSQL schema is owned by Alembic."""
+    if is_postgres_url(_auth_database_url()):
+        return
     con = _connect()
     cur = con.cursor()
     cur.execute(
@@ -129,19 +151,21 @@ def _validate_password(password: str) -> None:
         raise HTTPException(400, "Password must include at least one letter and one number.")
 
 
-def _new_session(con: sqlite3.Connection, user_id: int, remember: bool = True) -> str:
+def _new_session(repo: AuthRepository, user_id: int, remember: bool = True) -> str:
     raw = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()
     now = datetime.utcnow()
     lifetime = timedelta(days=SESSION_DAYS if remember else 1)
-    con.execute(
-        "INSERT INTO auth_sessions(token_hash,user_id,created_at,expires_at) VALUES(?,?,?,?)",
-        (token_hash, user_id, now.isoformat(), (now + lifetime).isoformat()),
+    repo.create_session(
+        token_hash=token_hash,
+        user_id=int(user_id),
+        created_at=now.isoformat(),
+        expires_at=(now + lifetime).isoformat(),
     )
     return raw
 
 
-def _public_user(row: sqlite3.Row) -> dict:
+def _public_user(row: Mapping) -> dict:
     return {
         "id": row["id"],
         "full_name": row["full_name"],
@@ -152,6 +176,7 @@ def _public_user(row: sqlite3.Row) -> dict:
 
 
 def _ensure_demo_account(con: sqlite3.Connection) -> tuple[int, int]:
+    """Legacy SQLite helper retained for tenant-schema migration compatibility."""
     row = con.execute("SELECT * FROM users WHERE lower(email)=?", ("demo@shortlist.ai",)).fetchone()
     if row:
         return int(row["id"]), int(row["workspace_id"])
@@ -171,28 +196,47 @@ def _ensure_demo_account(con: sqlite3.Connection) -> tuple[int, int]:
     return int(cur.lastrowid), workspace_id
 
 
+def _ensure_demo_repository(repo: AuthRepository) -> tuple[int, int]:
+    row = repo.get_user_by_email("demo@shortlist.ai")
+    if row:
+        return int(row["id"]), int(row["workspace_id"])
+    now = datetime.utcnow().isoformat()
+    workspace = repo.get_workspace_by_name("ShortlistAI Demo")
+    workspace_id = int(workspace["id"]) if workspace else repo.create_workspace(
+        name="ShortlistAI Demo", created_at=now
+    )
+    pw_hash, pw_salt = _hash_password("shortlist123")
+    try:
+        user_id = repo.create_user(
+            workspace_id=workspace_id,
+            full_name="Demo User",
+            email="demo@shortlist.ai",
+            password_hash=pw_hash,
+            password_salt=pw_salt,
+            role="Demo",
+            created_at=now,
+            last_login_at=now,
+        )
+    except RepositoryConflict:
+        existing = repo.get_user_by_email("demo@shortlist.ai")
+        if not existing:
+            raise
+        return int(existing["id"]), int(existing["workspace_id"])
+    return user_id, workspace_id
+
+
 def _session_row(raw_token: str):
     if not raw_token:
         return None
     token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
-    con = _connect()
-    try:
-        row = con.execute(
-            """SELECT s.expires_at,u.*,w.name workspace_name
-               FROM auth_sessions s JOIN users u ON u.id=s.user_id
-               LEFT JOIN workspaces w ON w.id=u.workspace_id
-               WHERE s.token_hash=?""",
-            (token_hash,),
-        ).fetchone()
-        if not row:
-            return None
-        if datetime.fromisoformat(row["expires_at"]) <= datetime.utcnow():
-            con.execute("DELETE FROM auth_sessions WHERE token_hash=?", (token_hash,))
-            con.commit()
-            return None
-        return row
-    finally:
-        con.close()
+    repo = _repository()
+    row = repo.get_session_user(token_hash)
+    if not row:
+        return None
+    if datetime.fromisoformat(str(row["expires_at"])) <= datetime.utcnow():
+        repo.delete_session(token_hash)
+        return None
+    return row
 
 
 def _set_cookie(response: Optional[Response], token: str, remember: bool) -> None:
@@ -245,8 +289,9 @@ def install_auth_routes(app) -> None:
 
     @app.post("/api/auth/register")
     def register(payload: RegisterIn, response: Response = None):
-        from tenant_security import ensure_schema
-        ensure_schema()
+        if not is_postgres_url(_auth_database_url()):
+            from tenant_security import ensure_schema
+            ensure_schema()
         full_name = payload.full_name.strip()
         email = payload.email.strip().lower()
         workspace = payload.workspace_name.strip()
@@ -260,74 +305,64 @@ def install_auth_routes(app) -> None:
             raise HTTPException(400, "Passwords do not match.")
         _validate_password(payload.password)
 
-        con = _connect()
-        try:
-            existing = con.execute("SELECT id FROM users WHERE lower(email)=?", (email,)).fetchone()
-            if existing:
-                raise HTTPException(409, "An account with this email already exists.")
-            now = datetime.utcnow().isoformat()
-            cur = con.cursor()
-            cur.execute("INSERT INTO workspaces(name,created_at) VALUES(?,?)", (workspace, now))
-            workspace_id = cur.lastrowid
-            pw_hash, pw_salt = _hash_password(payload.password)
-            cur.execute(
-                """INSERT INTO users(workspace_id,full_name,email,password_hash,password_salt,role,created_at,last_login_at)
-                   VALUES(?,?,?,?,?,?,?,?)""",
-                (workspace_id, full_name, email, pw_hash, pw_salt, "Workspace Admin", now, now),
-            )
-            user_id = cur.lastrowid
-            token = _new_session(con, user_id, True)
-            con.commit()
-            user = con.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
-            _set_cookie(response, token, True)
-            out = {"ok": True, "user": _public_user(user), "workspace": workspace}
-            if response is None:
-                out["token"] = token
-            return out
-        except HTTPException:
-            con.rollback()
-            raise
-        except sqlite3.IntegrityError:
-            con.rollback()
+        repo = _repository()
+        if repo.get_user_by_email(email):
             raise HTTPException(409, "An account with this email already exists.")
-        finally:
-            con.close()
+        now = datetime.utcnow().isoformat()
+        pw_hash, pw_salt = _hash_password(payload.password)
+        try:
+            workspace_id, user_id = repo.create_workspace_user(
+                workspace_name=workspace,
+                full_name=full_name,
+                email=email,
+                password_hash=pw_hash,
+                password_salt=pw_salt,
+                role="Workspace Admin",
+                created_at=now,
+                last_login_at=now,
+            )
+        except RepositoryConflict:
+            raise HTTPException(409, "An account with this email already exists.")
+        token = _new_session(repo, user_id, True)
+        user = repo.get_user(user_id)
+        _set_cookie(response, token, True)
+        out = {"ok": True, "user": _public_user(user), "workspace": workspace}
+        if response is None:
+            out["token"] = token
+        return out
 
     @app.post("/api/auth/login")
     def login(payload: LoginIn, response: Response = None):
-        from tenant_security import ensure_schema
-        ensure_schema()
+        if not is_postgres_url(_auth_database_url()):
+            from tenant_security import ensure_schema
+            ensure_schema()
         email = payload.email.strip().lower()
-        con = _connect()
-        try:
-            if email == "demo@shortlist.ai" and payload.password == "shortlist123":
-                user_id, _ = _ensure_demo_account(con)
-                row = con.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
-                now = datetime.utcnow().isoformat()
-                con.execute("UPDATE users SET last_login_at=? WHERE id=?", (now, row["id"]))
-                token = _new_session(con, row["id"], payload.remember)
-                con.commit()
-                _set_cookie(response, token, payload.remember)
-                out = {"ok": True, "user": _public_user(row), "workspace": "ShortlistAI Demo", "demo": True}
-                if response is None:
-                    out["token"] = token
-                return out
-
-            row = con.execute("SELECT * FROM users WHERE lower(email)=?", (email,)).fetchone()
-            if not row or not _verify_password(payload.password, row["password_hash"], row["password_salt"]):
-                raise HTTPException(401, "Invalid email or password.")
+        repo = _repository()
+        if email == "demo@shortlist.ai" and payload.password == "shortlist123":
+            user_id, _ = _ensure_demo_repository(repo)
             now = datetime.utcnow().isoformat()
-            con.execute("UPDATE users SET last_login_at=? WHERE id=?", (now, row["id"]))
-            token = _new_session(con, row["id"], payload.remember)
-            con.commit()
-            workspace = con.execute("SELECT name FROM workspaces WHERE id=?", (row["workspace_id"],)).fetchone()
+            repo.update_last_login(user_id, now)
+            row = repo.get_user(user_id)
+            token = _new_session(repo, user_id, payload.remember)
             _set_cookie(response, token, payload.remember)
-            out = {"ok": True, "user": _public_user(row), "workspace": workspace["name"] if workspace else ""}
+            out = {"ok": True, "user": _public_user(row), "workspace": "ShortlistAI Demo", "demo": True}
             if response is None:
                 out["token"] = token
             return out
-        finally:
-            con.close()
+
+        row = repo.get_user_by_email(email)
+        if not row or not _verify_password(payload.password, row["password_hash"], row["password_salt"]):
+            raise HTTPException(401, "Invalid email or password.")
+        now = datetime.utcnow().isoformat()
+        repo.update_last_login(int(row["id"]), now)
+        token = _new_session(repo, int(row["id"]), payload.remember)
+        workspace = repo.get_workspace(int(row["workspace_id"]))
+        refreshed = repo.get_user(int(row["id"])) or row
+        _set_cookie(response, token, payload.remember)
+        out = {"ok": True, "user": _public_user(refreshed), "workspace": workspace["name"] if workspace else ""}
+        if response is None:
+            out["token"] = token
+        return out
 
     @app.post("/api/auth/forgot-password")
     def forgot_password(payload: ForgotPasswordIn, request: Request):
@@ -337,31 +372,29 @@ def install_auth_routes(app) -> None:
         generic = {"ok": True, "message": "If an account exists for that email, a reset link has been sent."}
         if email == "demo@shortlist.ai":
             return generic
-        con = _connect()
+        repo = _repository()
+        row = repo.get_user_by_email(email)
+        if not row:
+            return generic
+        now = datetime.utcnow()
+        raw = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+        repo.replace_password_reset(
+            user_id=int(row["id"]),
+            token_hash=token_hash,
+            created_at=now.isoformat(),
+            expires_at=(now + timedelta(minutes=RESET_MINUTES)).isoformat(),
+        )
+        configured_base = os.getenv("SHORTLISTAI_PUBLIC_URL", "").strip().rstrip("/")
+        base = configured_base or str(request.base_url).rstrip("/")
+        reset_url = f"{base}/?reset_token={raw}"
         try:
-            row = con.execute("SELECT id,email FROM users WHERE lower(email)=?", (email,)).fetchone()
-            if not row:
-                return generic
-            now = datetime.utcnow()
-            raw = secrets.token_urlsafe(32)
-            token_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()
-            con.execute("DELETE FROM password_reset_tokens WHERE user_id=? OR expires_at<=?", (row["id"], now.isoformat()))
-            con.execute(
-                "INSERT INTO password_reset_tokens(token_hash,user_id,created_at,expires_at,used_at) VALUES(?,?,?,?,NULL)",
-                (token_hash, row["id"], now.isoformat(), (now + timedelta(minutes=RESET_MINUTES)).isoformat()),
-            )
-            con.commit()
-            configured_base = os.getenv("SHORTLISTAI_PUBLIC_URL", "").strip().rstrip("/")
-            base = configured_base or str(request.base_url).rstrip("/")
-            reset_url = f"{base}/?reset_token={raw}"
             sent = _send_reset_email(row["email"], reset_url)
-            if not sent and os.getenv("SHORTLISTAI_EXPOSE_RESET_LINK", "").lower() in {"1", "true", "yes"}:
-                generic["reset_url"] = reset_url
-            return generic
         except (smtplib.SMTPException, OSError):
-            return generic
-        finally:
-            con.close()
+            sent = False
+        if not sent and os.getenv("SHORTLISTAI_EXPOSE_RESET_LINK", "").lower() in {"1", "true", "yes"}:
+            generic["reset_url"] = reset_url
+        return generic
 
     @app.post("/api/auth/reset-password")
     def reset_password(payload: ResetPasswordIn):
@@ -372,30 +405,22 @@ def install_auth_routes(app) -> None:
             raise HTTPException(400, "Passwords do not match.")
         _validate_password(payload.password)
         token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-        con = _connect()
-        try:
-            row = con.execute(
-                """SELECT p.token_hash,p.user_id,p.expires_at,p.used_at,u.email
-                   FROM password_reset_tokens p JOIN users u ON u.id=p.user_id
-                   WHERE p.token_hash=?""",
-                (token_hash,),
-            ).fetchone()
-            if not row or row["used_at"] or datetime.fromisoformat(row["expires_at"]) <= datetime.utcnow():
-                raise HTTPException(400, "This reset link is invalid or has expired.")
-            if str(row["email"]).lower() == "demo@shortlist.ai":
-                raise HTTPException(400, "The demo account password cannot be changed.")
-            pw_hash, pw_salt = _hash_password(payload.password)
-            now = datetime.utcnow().isoformat()
-            con.execute(
-                "UPDATE users SET password_hash=?,password_salt=? WHERE id=?",
-                (pw_hash, pw_salt, row["user_id"]),
-            )
-            con.execute("UPDATE password_reset_tokens SET used_at=? WHERE token_hash=?", (now, token_hash))
-            con.execute("DELETE FROM auth_sessions WHERE user_id=?", (row["user_id"],))
-            con.commit()
-            return {"ok": True, "message": "Password updated. You can sign in with your new password."}
-        finally:
-            con.close()
+        repo = _repository()
+        row = repo.get_password_reset(token_hash)
+        if not row or row["used_at"] or datetime.fromisoformat(str(row["expires_at"])) <= datetime.utcnow():
+            raise HTTPException(400, "This reset link is invalid or has expired.")
+        if str(row["email"]).lower() == "demo@shortlist.ai":
+            raise HTTPException(400, "The demo account password cannot be changed.")
+        pw_hash, pw_salt = _hash_password(payload.password)
+        now = datetime.utcnow().isoformat()
+        repo.reset_password(
+            token_hash=token_hash,
+            user_id=int(row["user_id"]),
+            password_hash=pw_hash,
+            password_salt=pw_salt,
+            used_at=now,
+        )
+        return {"ok": True, "message": "Password updated. You can sign in with your new password."}
 
     @app.get("/api/auth/session")
     def browser_session(request: Request):
@@ -417,10 +442,7 @@ def install_auth_routes(app) -> None:
         if not raw and payload is not None:
             raw = payload.token
         if raw:
-            con = _connect()
-            con.execute("DELETE FROM auth_sessions WHERE token_hash=?", (hashlib.sha256(raw.encode("utf-8")).hexdigest(),))
-            con.commit()
-            con.close()
+            _repository().delete_session(hashlib.sha256(raw.encode("utf-8")).hexdigest())
         if response is not None:
             response.delete_cookie(SESSION_COOKIE, path="/")
         return {"ok": True}
@@ -430,6 +452,7 @@ def install_auth_routes(app) -> None:
 
 
 def schedule_main_auth_patch(delay_seconds: float = 0.05) -> None:
+    """Legacy compatibility shim; retained until runtime route patching is removed."""
     import threading
     import time
 
