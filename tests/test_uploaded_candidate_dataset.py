@@ -149,16 +149,19 @@ CURRENT_LOCATION_COUNTS = {'Bangalore': 129,
  'Pata': 1,
  'Thane': 1,
  'Delhi': 1,
+ 'Up': 1,
+ 'Odissa': 1,
+ 'Indore': 1,
+ 'Mellore': 1,
+ 'Tirupathi': 1,
+ 'Meerut': 1,
+ 'Rajastan': 1,
+ 'Varnasi': 1,
+ 'Chittoor': 1,
  'Bhopal': 1,
- 'Coimbatore': 1,
- 'Salem': 1,
- 'Tiruchirappalli': 1,
- 'Kerala': 1,
- 'Ahmedabad': 1,
- 'Vadodara': 1,
- 'Jaipur': 1,
- 'Lucknow': 1,
- 'Kochi': 1}
+ 'Kovilpati': 1,
+ 'St Thomas Mount': 1,
+ 'Hariyana': 1}
 PREFERRED_LOCATION_COUNTS = {'Bangalore': 175,
  'Hyderabad': 54,
  'Pune': 29,
@@ -270,8 +273,8 @@ def build_dataset():
             "expected_ctc": "11.0 LPA",
             "resume_text": (
                 "Five years of Python and Django backend experience with React and JavaScript frontend delivery. "
-                "No Java or Spring Boot experience is claimed in this profile. This row exists only as a Boolean "
-                "word-boundary control and contains no real candidate data."
+                "This intentionally represents a JavaScript-only profile with no JVM backend language experience. "
+                "It exists only as a Boolean word-boundary control and contains no real candidate data."
             ),
             "resume_filename": "dataset_javascript_control.txt",
             "profile_details": {
