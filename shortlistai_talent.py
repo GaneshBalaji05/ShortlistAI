@@ -144,8 +144,8 @@ except ImportError:
     pass
 
 try:
-    from data_foundation import schedule_data_foundation_patch
+    from data_foundation_v2 import schedule_data_foundation_v2_patch
 
-    schedule_data_foundation_patch()
+    schedule_data_foundation_v2_patch()
 except ImportError:
     pass
