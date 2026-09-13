@@ -6,6 +6,7 @@ on:
       - fix/login-view-icon
       - main
     paths:
+      - "static/login.html"
       - "static/login-view-icon.js"
       - "static/sw.js"
       - ".github/workflows/login-view-icon-check.yml"
@@ -28,6 +29,7 @@ jobs:
         run: |
           node - <<'NODE'
           const fs=require('fs');
+          const html=fs.readFileSync('static/login.html','utf8');
           const icon=fs.readFileSync('static/login-view-icon.js','utf8');
           const sw=fs.readFileSync('static/sw.js','utf8');
           for(const marker of ['viewToggle','shortlistai-login-view','visualViewport','Desktop View','Mobile View']){
@@ -39,6 +41,11 @@ jobs:
           if(!/\/static\/login-view-icon\.js\?v=\d+/.test(sw)){
             throw new Error('service worker must cache a versioned login view icon script');
           }
-          if(!sw.includes('injectLoginViewIcon')) throw new Error('missing login icon injection hook');
+          if(!/\/static\/login-view-icon\.js\?v=\d+/.test(html)){
+            throw new Error('login page must load the versioned view icon script directly');
+          }
+          if(sw.includes('injectLoginViewIcon') || sw.includes('html.replace')){
+            throw new Error('service worker must not mutate login HTML');
+          }
           console.log('Login view icon regression passed');
           NODE
