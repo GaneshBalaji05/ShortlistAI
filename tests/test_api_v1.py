@@ -10,6 +10,7 @@ from fastapi import FastAPI, Response
 
 import auth_runtime
 import tenant_security
+from shortlistai.api.v1 import install_api_v1
 
 
 def endpoint(app, path, method):
@@ -108,26 +109,31 @@ def run():
         tenant_security._schema_db = None
 
         app = FastAPI()
+        # Application composition is explicit: versioned routes first, then auth/security.
+        # This keeps router registration independent from legacy import side effects while
+        # the middleware still protects every /api/v1 path.
+        install_api_v1(app)
         auth_runtime.install_auth_routes(app)
-        # Explicitly exercise the production security installation contract. The call is
-        # idempotent and guarantees API v1 is attached even when auth was initialized in
-        # an isolated FastAPI test app instead of through main/__init__.py.
-        tenant_security.install(app)
 
-        route_paths = {getattr(route, "path", "") for route in app.routes}
-        for required in {
+        required_v1 = {
             "/api/v1/health",
             "/api/v1/me",
             "/api/v1/candidates",
             "/api/v1/candidates/{candidate_id}",
             "/api/v1/jobs",
             "/api/v1/jobs/{job_id}",
-        }:
-            assert required in route_paths, f"Missing API v1 route: {required}"
+        }
+        route_paths = {getattr(route, "path", "") for route in app.routes}
+        assert required_v1 <= route_paths, f"Missing API v1 routes: {sorted(required_v1 - route_paths)}"
 
+        # Independently prove that the actual uvicorn main:app runtime receives the same
+        # complete v1 surface. This prevents the isolated test composition from masking a
+        # production registration defect.
         import main as runtime_main
         production_paths = {getattr(route, "path", "") for route in runtime_main.app.routes}
-        assert "/api/v1/health" in production_paths, "Production runtime must install API v1"
+        assert required_v1 <= production_paths, (
+            f"Production runtime missing API v1 routes: {sorted(required_v1 - production_paths)}"
+        )
 
         one, cookie_one = register(app, "Workspace One", "one-api@example.com", "Workspace One")
         two, cookie_two = register(app, "Workspace Two", "two-api@example.com", "Workspace Two")
