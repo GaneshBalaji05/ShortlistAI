@@ -20,6 +20,7 @@ _workspace: ContextVar[Optional[int]] = ContextVar("shortlistai_workspace", defa
 _user: ContextVar[Optional[int]] = ContextVar("shortlistai_user", default=None)
 _schema_lock = threading.Lock()
 _schema_db: Optional[str] = None
+SQLITE_BUSY_TIMEOUT_MS = 5000
 
 
 def _auth():
@@ -27,10 +28,24 @@ def _auth():
     return auth_runtime
 
 
-def _raw() -> sqlite3.Connection:
-    con = sqlite3.connect(_auth().DB_PATH)
+def _configure_sqlite_connection(con: sqlite3.Connection) -> sqlite3.Connection:
+    """Apply safe defaults for concurrent ATS reads/writes on the current SQLite store."""
     con.row_factory = sqlite3.Row
+    con.execute("PRAGMA foreign_keys=ON")
+    con.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
+    try:
+        con.execute("PRAGMA journal_mode=WAL")
+    except sqlite3.DatabaseError:
+        # Some special/read-only SQLite targets cannot change journal mode. Keep the
+        # connection usable while still retaining foreign-key and timeout hardening.
+        pass
+    con.execute("PRAGMA synchronous=NORMAL")
     return con
+
+
+def _raw() -> sqlite3.Connection:
+    con = sqlite3.connect(_auth().DB_PATH, timeout=SQLITE_BUSY_TIMEOUT_MS / 1000)
+    return _configure_sqlite_connection(con)
 
 
 def _table(con: sqlite3.Connection, name: str) -> bool:
@@ -205,9 +220,13 @@ def workspace_db() -> sqlite3.Connection:
         return _raw()
     wid = int(value)
     ensure_schema()
-    con = sqlite3.connect(_auth().DB_PATH, factory=TenantConnection)
+    con = sqlite3.connect(
+        _auth().DB_PATH,
+        timeout=SQLITE_BUSY_TIMEOUT_MS / 1000,
+        factory=TenantConnection,
+    )
     con.workspace_id = wid
-    con.row_factory = sqlite3.Row
+    _configure_sqlite_connection(con)
     con.create_function("current_workspace", 0, lambda: wid)
     return con
 
