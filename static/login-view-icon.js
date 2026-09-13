@@ -70,6 +70,22 @@
     }
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount, {once:true});
-  else mount();
+  function loadLoginFetchRecovery() {
+    if (document.querySelector('script[data-login-fetch-recovery]')) return;
+    const script = document.createElement('script');
+    script.src = '/static/login-fetch-fix.js?v=1';
+    script.dataset.loginFetchRecovery = '1';
+    script.defer = true;
+    document.body.appendChild(script);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      mount();
+      loadLoginFetchRecovery();
+    }, {once:true});
+  } else {
+    mount();
+    loadLoginFetchRecovery();
+  }
 })();
