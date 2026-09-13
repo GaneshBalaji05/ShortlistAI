@@ -1,0 +1,83 @@
+name: Final review preview verification
+
+on:
+  push:
+    branches:
+      - feature/final-review-hardening
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify Render preview runtime
+        run: |
+          python - <<'PY'
+          import json
+          import re
+          import time
+          import urllib.parse
+          import urllib.request
+
+          ROOT = "https://shortlistai-final-review-preview.onrender.com"
+          EXPECTED = ["Applied","Contacted","Interview Scheduled","L1","L2","Selected","Hired","Dropped"]
+
+          def get_json(path):
+              with urllib.request.urlopen(ROOT + path, timeout=40) as response:
+                  if response.status != 200:
+                      raise RuntimeError(f"HTTP {response.status}: {path}")
+                  return json.load(response)
+
+          def evidence(row):
+              profile = dict(row.get("profile_details") or {})
+              for key in ["screening_status","interview_level","l1_status","l2_status","role_name","recruiter_name","source_history"]:
+                  profile.pop(key, None)
+              fields = [row.get("name"),row.get("email"),row.get("phone"),row.get("experience"),row.get("skills"),row.get("resume_text"),row.get("resume_filename"),row.get("notice_period"),row.get("current_ctc"),row.get("expected_ctc"),profile]
+              return " ".join(json.dumps(v, ensure_ascii=False) if isinstance(v,(dict,list)) else str(v or "") for v in fields).lower()
+
+          def word(text, value):
+              return re.search(r"(?<![a-z0-9])" + re.escape(value.lower()) + r"(?![a-z0-9])", text) is not None
+
+          for attempt in range(18):
+              try:
+                  status = get_json("/api/final-review/status")
+                  probe = status.get("probe") or {}
+                  assert status.get("scoring_version") == "stable-v2", status
+                  assert status.get("pipeline_stages") == EXPECTED, status
+                  assert status.get("bulk_ui_limit") == 800, status
+                  assert status.get("duplicate_policy") == "merge", status
+                  assert status.get("view_switcher") is True, status
+                  assert probe.get("passed") is True, probe
+                  assert probe.get("bulk_count") == 600, probe
+                  assert probe.get("bulk_searchable") is True, probe
+                  assert probe.get("scoring_stable") is True, probe
+                  assert probe.get("duplicate_merge") is True, probe
+                  assert probe.get("boolean_metadata_isolation") is True, probe
+
+                  pipeline = get_json("/api/pipeline-v3")
+                  assert pipeline.get("stages") == EXPECTED, pipeline
+                  assert pipeline.get("jobs"), pipeline
+                  assert set(pipeline.get("counts", {})) == set(EXPECTED), pipeline
+
+                  java = get_json("/api/candidates?" + urllib.parse.urlencode({"q":"Java"}))
+                  complex_rows = get_json("/api/candidates?" + urllib.parse.urlencode({"q":'Java AND ("Spring Boot" OR Spring)'}))
+                  for row in java:
+                      assert word(evidence(row), "java"), f"metadata-only Java leak: {row.get('name')}"
+                  for row in complex_rows:
+                      text = evidence(row)
+                      assert word(text, "java") and ("spring boot" in text or word(text, "spring")), row
+
+                  print(json.dumps({
+                      "preview":"passed",
+                      "candidate_total":status.get("candidate_total"),
+                      "probe":probe,
+                      "pipeline_total":pipeline.get("total"),
+                      "java_results":len(java),
+                      "complex_results":len(complex_rows),
+                  }, indent=2))
+                  break
+              except Exception as exc:
+                  if attempt == 17:
+                      raise
+                  print(f"Preview not ready ({attempt+1}/18): {exc}")
+                  time.sleep(10)
+          PY
