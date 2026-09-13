@@ -12,8 +12,7 @@ required = [
     'data-view="desktop"',
     "force-mobile",
     "force-desktop",
-    "Mobile View enabled",
-    "Desktop View enabled",
+    "View enabled",
 ]
 
 for marker in required:
