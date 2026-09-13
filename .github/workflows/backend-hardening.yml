@@ -5,6 +5,7 @@ on:
     branches:
       - backend-hardening-foundation
       - backend-postgres-migration
+      - engineering-stabilization-v2
       - main
   pull_request:
     branches:
@@ -38,6 +39,9 @@ jobs:
       - name: Migration runbook safety contract
         run: PYTHONPATH=. python tests/test_migration_runbook.py
 
+      - name: Repository layer regression
+        run: PYTHONPATH=. python tests/test_repository_layer.py
+
       - name: Backend preflight regression
         run: PYTHONPATH=. python tests/test_backend_preflight.py
 
@@ -61,7 +65,7 @@ jobs:
 
   postgres-schema:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/backend-postgres-migration' || github.event_name == 'pull_request'
+    if: github.ref == 'refs/heads/backend-postgres-migration' || github.ref == 'refs/heads/engineering-stabilization-v2' || github.event_name == 'pull_request'
     services:
       postgres:
         image: postgres:16
@@ -103,6 +107,9 @@ jobs:
 
       - name: Verify repository workspace isolation
         run: PYTHONPATH=. python tests/test_workspace_repository.py
+
+      - name: Verify repository auth and tenant boundaries
+        run: PYTHONPATH=. python tests/test_repository_layer.py
 
       - name: Verify SQLite data copy
         run: PYTHONPATH=. python tests/test_sqlite_to_postgres_migration.py
