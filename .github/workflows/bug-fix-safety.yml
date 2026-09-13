@@ -30,6 +30,7 @@ jobs:
 
       - name: Check JavaScript syntax
         run: |
+          node --check static/login-controller.js
           node --check static/login-fetch-fix.js
           node --check static/login-view-icon.js
           node --check static/final-review.js
@@ -72,16 +73,23 @@ jobs:
           auth = Path('auth_runtime.py').read_text(encoding='utf-8')
           security = Path('tenant_security.py').read_text(encoding='utf-8')
           sw = Path('static/sw.js').read_text(encoding='utf-8')
-          recovery = Path('static/login-fetch-fix.js').read_text(encoding='utf-8')
+          login = Path('static/login.html').read_text(encoding='utf-8')
+          controller = Path('static/login-controller.js').read_text(encoding='utf-8')
+          view = Path('static/login-view-icon.js').read_text(encoding='utf-8')
           manifest = json.loads(Path('static/manifest.webmanifest').read_text(encoding='utf-8'))
 
           assert 'httponly=True' in auth, 'session cookie must remain HttpOnly'
           assert 'SESSION_COOKIE' in security, 'tenant security must validate server session cookie'
           assert "url.pathname.startsWith('/api/')" in sw, 'service worker must not cache API data'
           assert "credentials: 'same-origin'" in sw, 'PWA navigation must preserve same-origin credentials'
-          assert "verifyCookieSession" in recovery, 'login recovery must verify the server cookie session'
-          assert "resumeExistingSession" in recovery, 'login page must recover an already authenticated session'
-          assert "forgot-password" in recovery and "reset-password" in recovery, 'password recovery UI wiring must exist'
+          assert "const CACHE = 'shortlistai-v10'" in sw, 'auth hotfix must invalidate the old PWA cache'
+          assert 'injectLoginViewIcon' not in sw, 'service worker must not mutate login HTML'
+          assert '/static/login-controller.js?v=1' in login, 'login controller must load directly from the document'
+          assert '/api/auth/login' not in login, 'legacy inline login handler must stay removed'
+          assert "verifyCookieSession" in controller, 'login controller must verify the server cookie session'
+          assert "resumeExistingSession" in controller, 'login page must recover an already authenticated session'
+          assert "forgot-password" in controller and "reset-password" in controller, 'password recovery wiring must exist'
+          assert "login-fetch-fix" not in view, 'view switcher must not inject authentication code'
           assert manifest.get('start_url') == '/app', 'installed app must launch through the protected workspace route'
           print('security/auth/PWA invariants OK')
           PY
