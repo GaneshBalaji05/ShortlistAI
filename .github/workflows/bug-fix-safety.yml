@@ -17,11 +17,22 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: Install dependencies
         run: pip install -r requirements.txt
 
       - name: Compile Python sources
         run: python -m compileall -q .
+
+      - name: Check JavaScript syntax
+        run: |
+          node --check static/login-fetch-fix.js
+          node --check static/login-view-icon.js
+          node --check static/sw.js
 
       - name: Import core runtime modules
         env:
@@ -40,16 +51,23 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import json
 
           auth = Path('auth_runtime.py').read_text(encoding='utf-8')
           security = Path('tenant_security.py').read_text(encoding='utf-8')
           sw = Path('static/sw.js').read_text(encoding='utf-8')
+          recovery = Path('static/login-fetch-fix.js').read_text(encoding='utf-8')
+          manifest = json.loads(Path('static/manifest.webmanifest').read_text(encoding='utf-8'))
 
           assert 'httponly=True' in auth, 'session cookie must remain HttpOnly'
           assert 'SESSION_COOKIE' in security, 'tenant security must validate server session cookie'
-          assert 'JavaScript' not in '', 'placeholder to keep this check explicit and deterministic'
           assert "url.pathname.startsWith('/api/')" in sw, 'service worker must not cache API data'
-          print('security/cache invariants OK')
+          assert "credentials: 'same-origin'" in sw, 'PWA navigation must preserve same-origin credentials'
+          assert "verifyCookieSession" in recovery, 'login recovery must verify the server cookie session'
+          assert "resumeExistingSession" in recovery, 'login page must recover an already authenticated session'
+          assert "forgot-password" in recovery and "reset-password" in recovery, 'password recovery UI wiring must exist'
+          assert manifest.get('start_url') == '/app', 'installed app must launch through the protected workspace route'
+          print('security/auth/PWA invariants OK')
           PY
 
       - name: Verify bug-fix standard exists
