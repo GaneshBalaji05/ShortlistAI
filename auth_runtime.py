@@ -5,8 +5,10 @@ import hmac
 import os
 import re
 import secrets
+import smtplib
 import sqlite3
 from datetime import datetime, timedelta
+from email.message import EmailMessage
 from pathlib import Path
 from typing import Optional
 
@@ -18,6 +20,7 @@ DB_PATH = os.getenv("SQLITE_PATH", str(BASE_DIR / "shortlistai.db"))
 PBKDF2_ROUNDS = 260_000
 SESSION_DAYS = 30
 SESSION_COOKIE = "shortlistai_session"
+RESET_MINUTES = 30
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 
@@ -37,6 +40,16 @@ class LoginIn(BaseModel):
 
 class TokenIn(BaseModel):
     token: str
+
+
+class ForgotPasswordIn(BaseModel):
+    email: str
+
+
+class ResetPasswordIn(BaseModel):
+    token: str
+    password: str
+    confirm_password: str
 
 
 def _connect() -> sqlite3.Connection:
@@ -78,8 +91,19 @@ def _ensure_auth_schema() -> None:
             FOREIGN KEY(user_id) REFERENCES users(id)
         )"""
     )
+    cur.execute(
+        """CREATE TABLE IF NOT EXISTS password_reset_tokens(
+            token_hash TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            used_at TEXT,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )"""
+    )
     cur.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user ON auth_sessions(user_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_tokens(user_id)")
     con.commit()
     con.close()
 
@@ -186,6 +210,36 @@ def _set_cookie(response: Optional[Response], token: str, remember: bool) -> Non
     )
 
 
+def _send_reset_email(recipient: str, reset_url: str) -> bool:
+    host = os.getenv("SHORTLISTAI_SMTP_HOST", "").strip()
+    username = os.getenv("SHORTLISTAI_SMTP_USERNAME", "").strip()
+    password = os.getenv("SHORTLISTAI_SMTP_PASSWORD", "")
+    sender = os.getenv("SHORTLISTAI_SMTP_FROM", username).strip()
+    if not host or not sender:
+        return False
+    try:
+        port = int(os.getenv("SHORTLISTAI_SMTP_PORT", "587"))
+    except ValueError:
+        port = 587
+    use_tls = os.getenv("SHORTLISTAI_SMTP_STARTTLS", "true").lower() not in {"0", "false", "no"}
+    msg = EmailMessage()
+    msg["Subject"] = "Reset your ShortlistAI password"
+    msg["From"] = sender
+    msg["To"] = recipient
+    msg.set_content(
+        "We received a request to reset your ShortlistAI password.\n\n"
+        f"Open this link to choose a new password (valid for {RESET_MINUTES} minutes):\n{reset_url}\n\n"
+        "If you did not request this, you can ignore this email."
+    )
+    with smtplib.SMTP(host, port, timeout=15) as smtp:
+        if use_tls:
+            smtp.starttls()
+        if username:
+            smtp.login(username, password)
+        smtp.send_message(msg)
+    return True
+
+
 def install_auth_routes(app) -> None:
     _ensure_auth_schema()
 
@@ -272,6 +326,74 @@ def install_auth_routes(app) -> None:
             if response is None:
                 out["token"] = token
             return out
+        finally:
+            con.close()
+
+    @app.post("/api/auth/forgot-password")
+    def forgot_password(payload: ForgotPasswordIn, request: Request):
+        email = payload.email.strip().lower()
+        if not EMAIL_RE.match(email):
+            raise HTTPException(400, "Enter a valid work email.")
+        generic = {"ok": True, "message": "If an account exists for that email, a reset link has been sent."}
+        if email == "demo@shortlist.ai":
+            return generic
+        con = _connect()
+        try:
+            row = con.execute("SELECT id,email FROM users WHERE lower(email)=?", (email,)).fetchone()
+            if not row:
+                return generic
+            now = datetime.utcnow()
+            raw = secrets.token_urlsafe(32)
+            token_hash = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+            con.execute("DELETE FROM password_reset_tokens WHERE user_id=? OR expires_at<=?", (row["id"], now.isoformat()))
+            con.execute(
+                "INSERT INTO password_reset_tokens(token_hash,user_id,created_at,expires_at,used_at) VALUES(?,?,?,?,NULL)",
+                (token_hash, row["id"], now.isoformat(), (now + timedelta(minutes=RESET_MINUTES)).isoformat()),
+            )
+            con.commit()
+            configured_base = os.getenv("SHORTLISTAI_PUBLIC_URL", "").strip().rstrip("/")
+            base = configured_base or str(request.base_url).rstrip("/")
+            reset_url = f"{base}/?reset_token={raw}"
+            sent = _send_reset_email(row["email"], reset_url)
+            if not sent and os.getenv("SHORTLISTAI_EXPOSE_RESET_LINK", "").lower() in {"1", "true", "yes"}:
+                generic["reset_url"] = reset_url
+            return generic
+        except (smtplib.SMTPException, OSError):
+            return generic
+        finally:
+            con.close()
+
+    @app.post("/api/auth/reset-password")
+    def reset_password(payload: ResetPasswordIn):
+        token = payload.token.strip()
+        if not token:
+            raise HTTPException(400, "Reset link is invalid.")
+        if payload.password != payload.confirm_password:
+            raise HTTPException(400, "Passwords do not match.")
+        _validate_password(payload.password)
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        con = _connect()
+        try:
+            row = con.execute(
+                """SELECT p.token_hash,p.user_id,p.expires_at,p.used_at,u.email
+                   FROM password_reset_tokens p JOIN users u ON u.id=p.user_id
+                   WHERE p.token_hash=?""",
+                (token_hash,),
+            ).fetchone()
+            if not row or row["used_at"] or datetime.fromisoformat(row["expires_at"]) <= datetime.utcnow():
+                raise HTTPException(400, "This reset link is invalid or has expired.")
+            if str(row["email"]).lower() == "demo@shortlist.ai":
+                raise HTTPException(400, "The demo account password cannot be changed.")
+            pw_hash, pw_salt = _hash_password(payload.password)
+            now = datetime.utcnow().isoformat()
+            con.execute(
+                "UPDATE users SET password_hash=?,password_salt=? WHERE id=?",
+                (pw_hash, pw_salt, row["user_id"]),
+            )
+            con.execute("UPDATE password_reset_tokens SET used_at=? WHERE token_hash=?", (now, token_hash))
+            con.execute("DELETE FROM auth_sessions WHERE user_id=?", (row["user_id"],))
+            con.commit()
+            return {"ok": True, "message": "Password updated. You can sign in with your new password."}
         finally:
             con.close()
 
