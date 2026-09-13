@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Query
+from pydantic import BaseModel, ConfigDict, Field
 
 from shortlistai.services.ats_read import (
     authenticated_context,
@@ -9,8 +10,29 @@ from shortlistai.services.ats_read import (
     list_candidates,
     list_jobs,
 )
+from shortlistai.services.ats_write import create_job, update_job
 
 router = APIRouter(prefix="/api/v1", tags=["API v1"])
+
+
+class JobCreateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    title: str = Field(min_length=2, max_length=200)
+    department: str | None = Field(default=None, max_length=120)
+    location: str | None = Field(default=None, max_length=160)
+    jd: str = Field(min_length=10, max_length=100_000)
+    status: str = Field(default="Open", min_length=1, max_length=40)
+
+
+class JobUpdateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    title: str | None = Field(default=None, min_length=2, max_length=200)
+    department: str | None = Field(default=None, max_length=120)
+    location: str | None = Field(default=None, max_length=160)
+    jd: str | None = Field(default=None, min_length=10, max_length=100_000)
+    status: str | None = Field(default=None, min_length=1, max_length=40)
 
 
 @router.get("/health")
@@ -51,9 +73,19 @@ def api_jobs(
     return list_jobs(limit=limit, offset=offset)
 
 
+@router.post("/jobs", status_code=201)
+def api_create_job(payload: JobCreateIn):
+    return create_job(payload.model_dump())
+
+
 @router.get("/jobs/{job_id}")
 def api_job(job_id: int):
     return get_job(job_id)
+
+
+@router.patch("/jobs/{job_id}")
+def api_update_job(job_id: int, payload: JobUpdateIn):
+    return update_job(job_id, payload.model_dump(exclude_unset=True))
 
 
 def resolved_route_paths(routes) -> set[str]:
