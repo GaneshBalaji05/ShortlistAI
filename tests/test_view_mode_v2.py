@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
@@ -20,6 +21,8 @@ for marker in required:
 
 assert 'id="viewModeToggle"' in index, "legacy mount point missing"
 assert "legacy.hidden=true" in js, "legacy one-way toggle should be hidden by v2 controller"
-assert "shortlistai-v7" in sw, "installed app cache version was not bumped to v7"
+assert re.search(r"const CACHE\s*=\s*['\"]shortlistai-v\d+['\"]", sw), (
+    "installed app service worker must use a versioned ShortlistAI cache"
+)
 
 print("view mode v2 regression passed")
