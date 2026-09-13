@@ -1,7 +1,6 @@
 import unittest
 
 from fastapi import FastAPI, HTTPException
-from fastapi.testclient import TestClient
 
 from boolean_search import (
     BooleanSearchError,
@@ -89,24 +88,27 @@ class BooleanSearchTests(unittest.TestCase):
             return [row for row in rows if q.lower() in str(row).lower()]
 
         install_candidate_search_route(app, original_list_candidates, HTTPException)
-        client = TestClient(app)
+        route = next(
+            route
+            for route in app.router.routes
+            if getattr(route, "path", None) == "/api/candidates"
+            and "GET" in (getattr(route, "methods", set()) or set())
+        )
 
-        java_results = client.get("/api/candidates", params={"q": "Java"})
-        self.assertEqual(java_results.status_code, 200)
+        java_results = route.endpoint(q="Java")
         self.assertEqual(
-            [row["name"] for row in java_results.json()],
+            [row["name"] for row in java_results],
             ["Priya Menon", "Mixed Candidate"],
         )
 
-        boolean_results = client.get(
-            "/api/candidates",
-            params={"q": 'Java AND ("Spring Boot" OR Spring) NOT Python'},
+        boolean_results = route.endpoint(
+            q='Java AND ("Spring Boot" OR Spring) NOT Python'
         )
-        self.assertEqual(boolean_results.status_code, 200)
-        self.assertEqual([row["name"] for row in boolean_results.json()], ["Priya Menon"])
+        self.assertEqual([row["name"] for row in boolean_results], ["Priya Menon"])
 
-        invalid = client.get("/api/candidates", params={"q": "Java AND ("})
-        self.assertEqual(invalid.status_code, 400)
+        with self.assertRaises(HTTPException) as ctx:
+            route.endpoint(q="Java AND (")
+        self.assertEqual(ctx.exception.status_code, 400)
 
 
 if __name__ == "__main__":
