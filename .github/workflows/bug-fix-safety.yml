@@ -47,6 +47,9 @@ jobs:
           print('core runtime imports OK')
           PY
 
+      - name: Run password recovery regression
+        run: PYTHONPATH=. python tests/test_auth_recovery.py
+
       - name: Verify security-sensitive production defaults
         run: |
           python - <<'PY'
