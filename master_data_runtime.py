@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import bz2
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -65,7 +66,7 @@ def _decode_env_rows() -> tuple[list[list[Any]], str, str]:
 
     actual_sha = hashlib.sha256(raw).hexdigest()
     expected_sha = os.getenv("SHORTLISTAI_MASTER_DATA_SHA256", "").strip().lower()
-    if expected_sha and not hashlib.compare_digest(actual_sha, expected_sha):
+    if expected_sha and not hmac.compare_digest(actual_sha, expected_sha):
         raise RuntimeError("Private Sheet2 master-data checksum mismatch")
 
     expected_count = os.getenv("SHORTLISTAI_MASTER_DATA_EXPECTED_COUNT", "").strip()
