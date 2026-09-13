@@ -1,0 +1,1 @@
+Decision: migrate ShortlistAI persistence incrementally rather than rewrite the application. PostgreSQL is introduced behind an explicit database/repository boundary while the existing SQLite runtime remains the production fallback until route migration and cutover verification are complete.
