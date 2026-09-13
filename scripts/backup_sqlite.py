@@ -8,7 +8,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-from scripts.migrate_sqlite_to_postgres import source_counts, validate_source_isolation
+from scripts.migrate_sqlite_to_neon_rehearsal import source_counts, validate_source_isolation
 
 
 def _integrity(connection: sqlite3.Connection) -> str:
