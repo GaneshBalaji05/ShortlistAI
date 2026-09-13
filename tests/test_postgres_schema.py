@@ -13,16 +13,18 @@ EXPECTED_TABLES = {
     "password_reset_tokens",
     "jobs",
     "candidates",
+    "candidate_identities",
     "notes",
     "activity_log",
     "interviews",
     "security_migrations",
     "alembic_version",
 }
-WORKSPACE_TABLES = {"jobs", "candidates", "notes", "activity_log", "interviews"}
+WORKSPACE_TABLES = {"jobs", "candidates", "candidate_identities", "notes", "activity_log", "interviews"}
 REQUIRED_INDEXES = {
     "jobs": {"idx_jobs_workspace"},
     "candidates": {"idx_candidates_workspace", "idx_candidates_workspace_job"},
+    "candidate_identities": {"idx_candidate_identities_candidate"},
     "notes": {"idx_notes_workspace", "idx_notes_candidate"},
     "activity_log": {"idx_activity_log_workspace", "idx_activity_log_candidate"},
     "interviews": {"idx_interviews_workspace", "idx_interviews_candidate", "idx_interviews_scheduled"},
@@ -58,6 +60,13 @@ def main() -> None:
         required = REQUIRED_INDEXES.get(table_name, set())
         assert required.issubset(indexes), f"{table_name} missing indexes: {sorted(required - indexes)}"
 
+    identity_fks = inspector.get_foreign_keys("candidate_identities")
+    assert any(
+        fk.get("constrained_columns") == ["candidate_id"]
+        and fk.get("referred_table") == "candidates"
+        for fk in identity_fks
+    ), "candidate_identities.candidate_id must reference candidates.id"
+
     with engine.connect() as connection:
         transaction = connection.begin()
         try:
@@ -92,12 +101,28 @@ def main() -> None:
                     "updated_at": "2026-09-14T00:00:00Z",
                 },
             ).scalar_one()
+            connection.execute(
+                text(
+                    "INSERT INTO candidate_identities(workspace_id,identity_type,identity_value,candidate_id,created_at) "
+                    "VALUES(:workspace_id,'email','candidate@example.test',:candidate_id,:created_at)"
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "candidate_id": candidate_id,
+                    "created_at": "2026-09-14T00:00:00Z",
+                },
+            )
             saved = connection.execute(
                 text("SELECT workspace_id,job_id FROM candidates WHERE id=:id"),
                 {"id": candidate_id},
             ).mappings().one()
             assert saved["workspace_id"] == workspace_id
             assert saved["job_id"] == job_id
+            identity = connection.execute(
+                text("SELECT candidate_id FROM candidate_identities WHERE workspace_id=:workspace_id"),
+                {"workspace_id": workspace_id},
+            ).mappings().one()
+            assert identity["candidate_id"] == candidate_id
         finally:
             transaction.rollback()
 
