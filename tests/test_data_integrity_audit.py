@@ -76,13 +76,12 @@ def insert_clean_data(path: Path) -> None:
         )
         con.execute("INSERT INTO auth_sessions VALUES(?,?,?,?)", ("token", 1, "2026-09-14", "2026-10-14"))
         con.executemany(
-            "INSERT INTO jobs VALUES(?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO jobs VALUES(?,?,?,?,?,?,?,?)",
             [
-                (1, 1, "Java Engineer", "Eng", "Chennai", "Java role", "Open", "2026-09-14",),
-                (2, 2, "Python Engineer", "Eng", "Chennai", "Python role", "Open", "2026-09-14",),
+                (1, 1, "Java Engineer", "Eng", "Chennai", "Java role", "Open", "2026-09-14"),
+                (2, 2, "Python Engineer", "Eng", "Chennai", "Python role", "Open", "2026-09-14"),
             ],
         )
-        # SQLite requires exact column count; use explicit columns for readability.
         con.execute(
             """INSERT INTO candidates(
                 id,workspace_id,name,email,phone,experience,skills,resume_text,source,job_id,stage,
