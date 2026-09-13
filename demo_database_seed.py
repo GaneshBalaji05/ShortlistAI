@@ -47,22 +47,49 @@ CANDIDATES = [
 ]
 
 
+def _workspace_column(con: sqlite3.Connection, table: str) -> bool:
+    return "workspace_id" in {row[1] for row in con.execute(f"PRAGMA table_info({table})")}
+
+
+def _demo_workspace_id(con: sqlite3.Connection) -> int:
+    from auth_runtime import _ensure_auth_schema, _ensure_demo_account
+
+    _ensure_auth_schema()
+    _, workspace_id = _ensure_demo_account(con)
+    con.commit()
+    return workspace_id
+
+
 def seed_demo_database(db_path: str) -> None:
-    """Seed/refresh fictional ATS data without inventing AI assessment results."""
+    """Seed/refresh fictional ATS data only inside the dedicated demo workspace."""
     con = sqlite3.connect(db_path)
     con.row_factory = sqlite3.Row
     now = datetime.utcnow().isoformat()
+    scoped = _workspace_column(con, "jobs") and _workspace_column(con, "candidates")
+    workspace_id = _demo_workspace_id(con) if scoped else None
 
     job_ids: list[int] = []
     for job in JOBS:
-        row = con.execute("SELECT id FROM jobs WHERE title=? AND department=? LIMIT 1", (job["title"], job["department"])).fetchone()
+        if scoped:
+            row = con.execute(
+                "SELECT id FROM jobs WHERE title=? AND department=? AND workspace_id=? LIMIT 1",
+                (job["title"], job["department"], workspace_id),
+            ).fetchone()
+        else:
+            row = con.execute("SELECT id FROM jobs WHERE title=? AND department=? LIMIT 1", (job["title"], job["department"])).fetchone()
         if row:
             job_ids.append(int(row["id"]))
             continue
-        cur = con.execute(
-            "INSERT INTO jobs(title,department,location,jd,status,created_at) VALUES(?,?,?,?,?,?)",
-            (job["title"], job["department"], job["location"], job["jd"], "Open", now),
-        )
+        if scoped:
+            cur = con.execute(
+                "INSERT INTO jobs(workspace_id,title,department,location,jd,status,created_at) VALUES(?,?,?,?,?,?,?)",
+                (workspace_id, job["title"], job["department"], job["location"], job["jd"], "Open", now),
+            )
+        else:
+            cur = con.execute(
+                "INSERT INTO jobs(title,department,location,jd,status,created_at) VALUES(?,?,?,?,?,?)",
+                (job["title"], job["department"], job["location"], job["jd"], "Open", now),
+            )
         job_ids.append(int(cur.lastrowid))
 
     for name, email, exp, skills, stage, job_index, l1_status, l2_status in CANDIDATES:
@@ -86,26 +113,52 @@ def seed_demo_database(db_path: str) -> None:
         }
         resume_text = f"{name}\n{exp} years of experience\nSkills: {skills}\nRecent project aligned to {JOBS[job_index]['title']}."
 
-        existing = con.execute("SELECT id FROM candidates WHERE source=? AND email=? LIMIT 1", (DEMO_SOURCE, email)).fetchone()
+        if scoped:
+            existing = con.execute(
+                "SELECT id FROM candidates WHERE source=? AND email=? AND workspace_id=? LIMIT 1",
+                (DEMO_SOURCE, email, workspace_id),
+            ).fetchone()
+        else:
+            existing = con.execute("SELECT id FROM candidates WHERE source=? AND email=? LIMIT 1", (DEMO_SOURCE, email)).fetchone()
         if existing:
-            con.execute(
-                """UPDATE candidates SET experience=?,skills=?,resume_text=?,resume_filename=?,job_id=?,stage=?,
-                   ai_score=NULL,rating=NULL,ai_details=NULL,profile_details=?,updated_at=? WHERE id=?""",
-                (exp, skills, resume_text, f"{name.replace(' ', '_')}_Demo.txt", job_ids[job_index], stage, json.dumps(profile_details), now, int(existing["id"])),
-            )
+            if scoped:
+                con.execute(
+                    """UPDATE candidates SET experience=?,skills=?,resume_text=?,resume_filename=?,job_id=?,stage=?,
+                       ai_score=NULL,rating=NULL,ai_details=NULL,profile_details=?,updated_at=? WHERE id=? AND workspace_id=?""",
+                    (exp, skills, resume_text, f"{name.replace(' ', '_')}_Demo.txt", job_ids[job_index], stage, json.dumps(profile_details), now, int(existing["id"]), workspace_id),
+                )
+            else:
+                con.execute(
+                    """UPDATE candidates SET experience=?,skills=?,resume_text=?,resume_filename=?,job_id=?,stage=?,
+                       ai_score=NULL,rating=NULL,ai_details=NULL,profile_details=?,updated_at=? WHERE id=?""",
+                    (exp, skills, resume_text, f"{name.replace(' ', '_')}_Demo.txt", job_ids[job_index], stage, json.dumps(profile_details), now, int(existing["id"])),
+                )
             continue
 
-        con.execute(
-            """INSERT INTO candidates(
-                name,email,phone,experience,skills,resume_text,resume_filename,source,
-                notice_period,current_ctc,expected_ctc,job_id,stage,ai_score,rating,
-                ai_details,profile_details,created_at,updated_at
-            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (
-                name,email,"",exp,skills,resume_text,f"{name.replace(' ', '_')}_Demo.txt",DEMO_SOURCE,
-                "30 Days","","",job_ids[job_index],stage,None,None,None,json.dumps(profile_details),now,now,
-            ),
-        )
+        if scoped:
+            con.execute(
+                """INSERT INTO candidates(
+                    workspace_id,name,email,phone,experience,skills,resume_text,resume_filename,source,
+                    notice_period,current_ctc,expected_ctc,job_id,stage,ai_score,rating,
+                    ai_details,profile_details,created_at,updated_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    workspace_id,name,email,"",exp,skills,resume_text,f"{name.replace(' ', '_')}_Demo.txt",DEMO_SOURCE,
+                    "30 Days","","",job_ids[job_index],stage,None,None,None,json.dumps(profile_details),now,now,
+                ),
+            )
+        else:
+            con.execute(
+                """INSERT INTO candidates(
+                    name,email,phone,experience,skills,resume_text,resume_filename,source,
+                    notice_period,current_ctc,expected_ctc,job_id,stage,ai_score,rating,
+                    ai_details,profile_details,created_at,updated_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    name,email,"",exp,skills,resume_text,f"{name.replace(' ', '_')}_Demo.txt",DEMO_SOURCE,
+                    "30 Days","","",job_ids[job_index],stage,None,None,None,json.dumps(profile_details),now,now,
+                ),
+            )
 
     con.commit()
     con.close()

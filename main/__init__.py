@@ -507,3 +507,14 @@ def ats_workspace():
 @app.get("/sw.js")
 def root_service_worker():
     return Response((BASE_DIR / "static" / "sw.js").read_text(), media_type="application/javascript", headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"})
+
+
+# Security is installed synchronously only after all application routes exist, so
+# there is no cold-start window where /app or an ATS API can be served publicly.
+from auth_runtime import install_auth_routes
+
+if not any(getattr(route, "path", "") == "/api/auth/register" for route in app.routes):
+    install_auth_routes(app)
+else:
+    from tenant_security import install as install_tenant_security
+    install_tenant_security(app)
