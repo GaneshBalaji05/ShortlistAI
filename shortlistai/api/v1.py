@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Query
 
+from shortlistai.api.ingestion import router as ingestion_router
 from shortlistai.services.ats_read import (
     authenticated_context,
     get_candidate,
@@ -11,6 +12,7 @@ from shortlistai.services.ats_read import (
 )
 
 router = APIRouter(prefix="/api/v1", tags=["API v1"])
+router.include_router(ingestion_router)
 
 
 @router.get("/health")
