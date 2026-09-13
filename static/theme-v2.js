@@ -1,6 +1,9 @@
 (() => {
-  const sessionRaw = localStorage.getItem('shortlistai-preview-session');
-  if (!sessionRaw && location.pathname === '/app') {
+  const AUTH_SESSION_KEY = 'shortlistai-auth-session';
+  const authSessionRaw = localStorage.getItem(AUTH_SESSION_KEY) || sessionStorage.getItem(AUTH_SESSION_KEY);
+  let authSession = null;
+  try { authSession = JSON.parse(authSessionRaw || 'null'); } catch (_) {}
+  if ((!authSession || !authSession.token) && location.pathname === '/app') {
     location.replace('/');
     return;
   }
@@ -69,14 +72,24 @@
 
   const side = document.querySelector('.side');
   if (side && !side.querySelector('.sidebar-account')) {
-    let email = 'Preview user';
-    try { email = JSON.parse(sessionRaw || '{}').email || email; } catch (_) {}
+    let email = 'Signed in user';
+    try { email = authSession?.user?.email || email; } catch (_) {}
     const name = email.split('@')[0].replace(/[._-]+/g,' ').replace(/\b\w/g,m=>m.toUpperCase());
     const footer = document.createElement('div');
     footer.className = 'sidebar-account';
     footer.innerHTML = `<div class="account-row"><div class="avatar">${(name[0] || 'S').toUpperCase()}</div><div class="account-copy"><b>${escapeHtml(name)}</b><small>Recruiter workspace</small></div><button class="signout" type="button" aria-label="Sign out">↗</button></div>`;
     side.appendChild(footer);
-    footer.querySelector('.signout').onclick = () => { localStorage.removeItem('shortlistai-preview-session'); location.href='/'; };
+    footer.querySelector('.signout').onclick = async () => {
+      try {
+        if (authSession?.token) {
+          await fetch('/api/auth/logout', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({token:authSession.token})});
+        }
+      } catch (_) {}
+      localStorage.removeItem(AUTH_SESSION_KEY);
+      sessionStorage.removeItem(AUTH_SESSION_KEY);
+      localStorage.removeItem('shortlistai-preview-session');
+      location.href='/';
+    };
   }
 
   function escapeHtml(value){
