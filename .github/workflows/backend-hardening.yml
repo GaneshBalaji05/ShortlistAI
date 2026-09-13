@@ -47,6 +47,12 @@ jobs:
       - name: Tenant isolation regression
         run: PYTHONPATH=. python tests/test_tenant_security.py
 
+      - name: API v1 regression
+        run: PYTHONPATH=. python tests/test_api_v1.py
+
+      - name: Resumable 500-profile ingestion regression
+        run: PYTHONPATH=. python tests/test_resumable_ingestion.py
+
       - name: Account creation regression
         run: PYTHONPATH=. python tests/test_create_account.py
 
