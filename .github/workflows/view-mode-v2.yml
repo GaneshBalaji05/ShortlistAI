@@ -1,0 +1,66 @@
+name: View mode v2 checks
+
+on:
+  push:
+    branches:
+      - fix/true-mobile-desktop-view
+      - main
+    paths:
+      - "static/final-review.js"
+      - "static/sw.js"
+      - "tests/test_view_mode_v2.py"
+      - ".github/workflows/view-mode-v2.yml"
+  pull_request:
+    branches: [main]
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: View mode regression
+        run: python tests/test_view_mode_v2.py
+      - name: JavaScript syntax
+        run: node --check static/final-review.js
+
+  production:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: regression
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify Mobile View and Desktop View in production
+        run: |
+          python - <<'PY'
+          import time
+          import urllib.request
+
+          ROOT = "https://shortlistai-app.onrender.com"
+          last = None
+          for attempt in range(36):
+              try:
+                  with urllib.request.urlopen(ROOT + "/static/final-review.js", timeout=40) as r:
+                      js = r.read().decode("utf-8", errors="ignore")
+                  with urllib.request.urlopen(ROOT + "/static/sw.js", timeout=40) as r:
+                      sw = r.read().decode("utf-8", errors="ignore")
+                  with urllib.request.urlopen(ROOT + "/app", timeout=40) as r:
+                      html = r.read().decode("utf-8", errors="ignore")
+
+                  for marker in ['data-view="mobile"','data-view="desktop"','force-mobile','force-desktop','frViewModeControl']:
+                      if marker not in js:
+                          raise AssertionError(f"missing production marker: {marker}")
+                  if 'shortlistai-v6' not in sw:
+                      raise AssertionError("service worker cache v6 not live")
+                  if 'viewModeToggle' not in html or 'final-review.js' not in html:
+                      raise AssertionError("view mode mount or controller missing from app")
+                  print("Production Mobile View/Desktop View verification passed")
+                  break
+              except Exception as exc:
+                  last = exc
+                  if attempt == 35:
+                      raise
+                  print(f"Production not ready ({attempt + 1}/36): {exc}")
+                  time.sleep(10)
+          PY

@@ -3,6 +3,7 @@
   const STAGE_ALIASES = {Sourced:'Applied',Screened:'Contacted',Interview:'Interview Scheduled',Offered:'Selected',Joined:'Hired',Rejected:'Dropped'};
   const BULK_LIMIT = 800;
   const BATCH_SIZE = 40;
+  const VIEW_KEY = 'shortlistai-view-mode';
   const style = document.createElement('style');
   style.textContent = `
     .fr-count{display:inline-flex;align-items:center;gap:6px;margin-left:8px;padding:6px 10px;border:1px solid #e4e4e7;border-radius:999px;background:#fff;color:#52525b;font-size:12px;font-weight:800}
@@ -15,6 +16,39 @@
     .fr-bulk-note{margin-top:7px;font-size:12px;color:#71717a}.fr-progress{height:7px;background:#eee;border-radius:999px;overflow:hidden;margin:8px 0}.fr-progress i{display:block;height:100%;background:#ef233c;transition:width .2s ease}
     body.force-desktop .fr-stage-grid{grid-template-columns:repeat(8,minmax(130px,1fr))}
     @media(max-width:900px){.fr-stage-grid{grid-template-columns:repeat(2,1fr)}.fr-list{grid-template-columns:1fr}.fr-role{min-width:100%;}.fr-pipeline-top{align-items:stretch}}
+
+    /* True in-app Mobile View / Desktop View selector */
+    .fr-view-switch{position:fixed;right:14px;top:14px;z-index:120;display:flex;gap:4px;padding:4px;border:1px solid #4a2020;border-radius:14px;background:rgba(8,8,9,.96);box-shadow:0 14px 36px rgba(0,0,0,.48);backdrop-filter:blur(14px)}
+    .fr-view-switch button{border:0;background:transparent;color:#aaa;padding:9px 11px;border-radius:10px;font-size:12px;font-weight:850;cursor:pointer;min-height:38px;white-space:nowrap}
+    .fr-view-switch button:hover{color:#fff;background:#171719}.fr-view-switch button.active{background:linear-gradient(135deg,#ff3b30,#d50000);color:#fff;box-shadow:0 6px 16px rgba(255,45,45,.22)}
+    .fr-view-switch button span{margin-right:6px}.fr-view-switch-status{position:fixed;right:16px;top:65px;z-index:119;color:#9a9aa0;font-size:10px;font-weight:750;pointer-events:none}
+
+    /* Mobile View can be chosen manually even on a wide screen. */
+    body.force-mobile{padding-bottom:78px!important;overflow-x:hidden!important;max-width:480px!important;margin:0 auto!important;min-height:100vh!important;background:#000!important}
+    body.force-mobile .app{display:block!important;grid-template-columns:1fr!important;min-width:0!important;width:100%!important}
+    body.force-mobile .side{position:fixed!important;z-index:60!important;bottom:0!important;left:50%!important;right:auto!important;top:auto!important;transform:translateX(-50%)!important;width:min(480px,100vw)!important;height:72px!important;padding:6px 5px!important;background:rgba(5,5,5,.97)!important;backdrop-filter:blur(12px)!important;border-top:1px solid var(--line)!important;border-right:0!important;border-bottom:0!important}
+    body.force-mobile .side>.brand,body.force-mobile .install{display:none!important}
+    body.force-mobile .nav{height:100%!important;display:grid!important;grid-template-columns:repeat(5,1fr)!important;gap:2px!important;overflow-x:auto!important;overflow-y:hidden!important;flex-direction:row!important}
+    body.force-mobile .nav button{display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;padding:4px 2px!important;font-size:10px!important;text-align:center!important;min-height:58px!important;border-radius:12px!important;white-space:nowrap!important}
+    body.force-mobile .nav button::before{width:auto!important;display:block!important;font-size:20px!important;line-height:20px!important;margin:0 0 4px!important}
+    body.force-mobile .main{padding:18px 14px 28px!important;max-width:480px!important;width:100%!important;margin:0 auto!important}
+    body.force-mobile .mobile-header{display:flex!important;align-items:center!important;justify-content:space-between!important;margin-bottom:18px!important}
+    body.force-mobile .mobile-header .brand{display:block!important;margin:0!important;font-size:21px!important}
+    body.force-mobile .title h1{font-size:26px!important}.force-mobile .title p{font-size:14px!important}
+    body.force-mobile .top{margin-bottom:16px!important;align-items:flex-start!important;flex-direction:column!important}
+    body.force-mobile .stats{grid-template-columns:repeat(2,1fr)!important;gap:10px!important}.force-mobile .stat{padding:14px!important}.force-mobile .stat b{font-size:25px!important}
+    body.force-mobile .grid2,body.force-mobile .grid3,body.force-mobile .eval-grid,body.force-mobile .friendly-metrics{grid-template-columns:1fr!important}
+    body.force-mobile .card{padding:15px!important;border-radius:14px!important}
+    body.force-mobile .table thead{display:none!important}.force-mobile .table,.force-mobile .table tbody,.force-mobile .table tr,.force-mobile .table td{display:block!important;width:100%!important}
+    body.force-mobile .table tr{background:#0d0d0f!important;border:1px solid var(--line)!important;border-radius:13px!important;padding:12px!important;margin-bottom:10px!important}.force-mobile .table td{border:0!important;padding:5px 0!important}
+    body.force-mobile .toolbar input,body.force-mobile .toolbar select{width:100%!important;min-height:44px!important}
+    body.force-mobile .modal{padding:0!important;align-items:end!important}.force-mobile .modalbox{width:100%!important;max-height:94vh!important;border-radius:22px 22px 0 0!important;padding:16px!important}
+    body.force-mobile .profile{grid-template-columns:1fr 1fr!important}.force-mobile .pipeline{grid-template-columns:repeat(6,245px)!important;padding-bottom:8px!important}.force-mobile .col{min-height:380px!important}
+    body.force-mobile .scorecircle{width:62px!important;height:62px!important}.force-mobile .eval-head{align-items:flex-start!important}.force-mobile .eval-head .right{margin-left:0!important;width:100%!important}
+    body.force-mobile .result{padding:13px!important}.force-mobile .result .right{margin-left:0!important}.force-mobile .row{align-items:stretch!important}.force-mobile .row>.btn,.force-mobile .row>.ghost{flex:1!important}
+    body.force-mobile .quick-actions .btn,body.force-mobile .quick-actions .ghost{width:100%!important;flex:auto!important}.force-mobile .shortlist-grid{display:block!important}.force-mobile .shortlist-grid>.card{margin-bottom:12px!important}
+    body.force-mobile .capture-preview{grid-template-columns:1fr!important}.force-mobile .fr-stage-grid{grid-template-columns:repeat(2,1fr)!important}.force-mobile .fr-list{grid-template-columns:1fr!important}.force-mobile .fr-role{min-width:100%!important}.force-mobile .fr-pipeline-top{align-items:stretch!important}
+    @media(max-width:520px){.fr-view-switch{right:10px;top:10px}.fr-view-switch button{padding:8px 9px;font-size:11px}.fr-view-switch-status{display:none}}
   `;
   document.head.appendChild(style);
 
@@ -69,8 +103,52 @@
   const talentSearch = document.querySelector('#tpFilters input[name="q"]');
   if(talentSearch) talentSearch.placeholder='Boolean search: Java AND ("Spring Boot" OR Spring) NOT Python';
 
-  const toggle=document.getElementById('viewModeToggle');
-  if(toggle){toggle.hidden=false;toggle.style.display='';toggle.title='Manually switch the installed app between Mobile View and Desktop View';}
+  function applyViewMode(mode, persist=true){
+    const resolved = mode === 'mobile' ? 'mobile' : 'desktop';
+    document.body.classList.toggle('force-mobile', resolved === 'mobile');
+    document.body.classList.toggle('force-desktop', resolved === 'desktop' && window.matchMedia('(max-width:900px)').matches);
+    document.documentElement.dataset.shortlistView = resolved;
+    if(persist) localStorage.setItem(VIEW_KEY, resolved);
+    const control=document.getElementById('frViewModeControl');
+    if(control){
+      control.querySelectorAll('[data-view]').forEach(btn=>{
+        const active=btn.dataset.view===resolved;
+        btn.classList.toggle('active',active);
+        btn.setAttribute('aria-pressed',active?'true':'false');
+      });
+    }
+    const status=document.getElementById('frViewModeStatus');
+    if(status) status.textContent=`${resolved === 'mobile' ? 'Mobile' : 'Desktop'} View active`;
+  }
+
+  function installViewModeControl(){
+    const legacy=document.getElementById('viewModeToggle');
+    if(legacy){legacy.hidden=true;legacy.style.setProperty('display','none','important');legacy.setAttribute('aria-hidden','true');}
+    let control=document.getElementById('frViewModeControl');
+    if(!control){
+      control=document.createElement('div');
+      control.id='frViewModeControl';
+      control.className='fr-view-switch';
+      control.setAttribute('role','group');
+      control.setAttribute('aria-label','App view mode');
+      control.innerHTML='<button type="button" data-view="mobile" aria-pressed="false"><span>▯</span>Mobile View</button><button type="button" data-view="desktop" aria-pressed="false"><span>▣</span>Desktop View</button>';
+      document.body.appendChild(control);
+      const status=document.createElement('div');status.id='frViewModeStatus';status.className='fr-view-switch-status';document.body.appendChild(status);
+    }
+    control.querySelectorAll('[data-view]').forEach(btn=>btn.onclick=()=>{
+      applyViewMode(btn.dataset.view,true);
+      window.scrollTo({top:0,left:0,behavior:'smooth'});
+      if(typeof toast==='function') toast(`${btn.dataset.view==='mobile'?'Mobile':'Desktop'} View enabled`);
+    });
+    const stored=localStorage.getItem(VIEW_KEY);
+    const initial=(stored==='mobile'||stored==='desktop')?stored:(window.matchMedia('(max-width:900px)').matches?'mobile':'desktop');
+    applyViewMode(initial,false);
+    window.addEventListener('resize',()=>{
+      const chosen=localStorage.getItem(VIEW_KEY)||initial;
+      applyViewMode(chosen,false);
+    });
+  }
+  installViewModeControl();
 
   loadCandidates = async function(){
     jobs = await api('/api/jobs');
