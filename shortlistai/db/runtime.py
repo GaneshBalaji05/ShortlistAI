@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from functools import lru_cache
+import threading
 from pathlib import Path
 from typing import Mapping
 
@@ -10,6 +10,8 @@ from sqlalchemy.engine import Engine
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SQLITE_PATH = PROJECT_ROOT / "shortlistai.db"
+_ENGINE_LOCK = threading.Lock()
+_ENGINES: dict[str, Engine] = {}
 
 
 def normalize_database_url(url: str) -> str:
@@ -45,29 +47,28 @@ def create_database_engine(url: str | None = None) -> Engine:
     return create_engine(database_url, **kwargs)
 
 
-@lru_cache(maxsize=8)
-def _cached_engine(database_url: str) -> Engine:
-    return create_database_engine(database_url)
+def get_engine_for_url(url: str) -> Engine:
+    """Return one reusable engine per normalized database URL."""
+    database_url = normalize_database_url(url)
+    if not database_url:
+        raise ValueError("Database URL is required")
+    with _ENGINE_LOCK:
+        engine = _ENGINES.get(database_url)
+        if engine is None:
+            engine = create_database_engine(database_url)
+            _ENGINES[database_url] = engine
+        return engine
 
 
 def get_database_engine() -> Engine:
-    """Return a reusable engine for the currently configured database URL.
-
-    The normalized URL is the cache key, so tests or controlled cutovers that change
-    ``DATABASE_URL`` get a separate engine instead of accidentally reusing the old target.
-    """
-
-    return _cached_engine(normalize_database_url(resolve_database_url()))
+    """Return the reusable engine for the currently configured database."""
+    return get_engine_for_url(resolve_database_url())
 
 
 def dispose_cached_engines() -> None:
-    """Dispose cached engines and clear the cache (primarily for tests/cutover tooling)."""
-
-    cache = _cached_engine.cache_info()
-    if cache.currsize:
-        # functools does not expose cached values, so clear first; engines also release
-        # connections when their process exits. Explicit disposal remains available on any
-        # engine returned to callers that need deterministic teardown.
-        _cached_engine.cache_clear()
-    else:
-        _cached_engine.cache_clear()
+    """Dispose all pooled connections and clear cached engines."""
+    with _ENGINE_LOCK:
+        engines = list(_ENGINES.values())
+        _ENGINES.clear()
+    for engine in engines:
+        engine.dispose()
