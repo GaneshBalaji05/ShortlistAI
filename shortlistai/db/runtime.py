@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from functools import lru_cache
 from pathlib import Path
 from typing import Mapping
 
@@ -42,3 +43,31 @@ def create_database_engine(url: str | None = None) -> Engine:
     if database_url.startswith("sqlite:///"):
         kwargs["connect_args"] = {"check_same_thread": False, "timeout": 30}
     return create_engine(database_url, **kwargs)
+
+
+@lru_cache(maxsize=8)
+def _cached_engine(database_url: str) -> Engine:
+    return create_database_engine(database_url)
+
+
+def get_database_engine() -> Engine:
+    """Return a reusable engine for the currently configured database URL.
+
+    The normalized URL is the cache key, so tests or controlled cutovers that change
+    ``DATABASE_URL`` get a separate engine instead of accidentally reusing the old target.
+    """
+
+    return _cached_engine(normalize_database_url(resolve_database_url()))
+
+
+def dispose_cached_engines() -> None:
+    """Dispose cached engines and clear the cache (primarily for tests/cutover tooling)."""
+
+    cache = _cached_engine.cache_info()
+    if cache.currsize:
+        # functools does not expose cached values, so clear first; engines also release
+        # connections when their process exits. Explicit disposal remains available on any
+        # engine returned to callers that need deterministic teardown.
+        _cached_engine.cache_clear()
+    else:
+        _cached_engine.cache_clear()
