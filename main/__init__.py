@@ -18,6 +18,8 @@ from zoneinfo import ZoneInfo
 from fastapi import HTTPException
 from fastapi.responses import HTMLResponse, Response
 from demo_database_seed import seed_demo_database
+from shortlistai.db.repositories import WorkspaceRepository
+from shortlistai.db.runtime import get_database_engine, is_postgres_url, resolve_database_url
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 LEGACY_MAIN = PROJECT_ROOT / "main.py"
@@ -38,6 +40,13 @@ def __getattr__(name: str):
     return getattr(legacy, name)
 
 
+def _workspace_repo() -> WorkspaceRepository:
+    """Return the explicit repository for the authenticated request workspace."""
+    from tenant_security import current_workspace
+
+    return WorkspaceRepository(get_database_engine(), current_workspace())
+
+
 # Remove the legacy root page while preserving all APIs, static files and startup hooks.
 app.router.routes = [
     route for route in app.router.routes
@@ -53,7 +62,9 @@ def seed_product_demo_data():
 
 @app.on_event("startup")
 def ensure_interview_storage():
-    """Create interview scheduling storage without changing the legacy ATS schema."""
+    """Keep the SQLite rollback store compatible; PostgreSQL schema is owned by Alembic."""
+    if is_postgres_url(resolve_database_url()):
+        return
     con = legacy.db()
     con.execute(
         """CREATE TABLE IF NOT EXISTS interviews(
@@ -168,21 +179,11 @@ def _summary(candidates: list[dict]) -> dict:
         "source_distribution": dict(Counter(c["source"] or "Unknown" for c in candidates)),
     }
 
+
 @app.get("/api/dashboard-v2")
 def dashboard_v2():
     """Recruiter dashboard analytics with job-level drill-down data."""
-    con = legacy.db()
-    job_rows = con.execute(
-        "SELECT id,title,department,location,status,created_at FROM jobs ORDER BY id DESC"
-    ).fetchall()
-    candidate_rows = con.execute(
-        """SELECT c.id,c.name,c.email,c.job_id,c.stage,c.ai_score,c.rating,c.source,
-                  c.profile_details,c.created_at,c.updated_at,j.title AS job_title
-           FROM candidates c
-           LEFT JOIN jobs j ON j.id=c.job_id
-           ORDER BY c.updated_at DESC,c.id DESC"""
-    ).fetchall()
-    con.close()
+    job_rows, candidate_rows = _workspace_repo().dashboard_rows()
 
     candidates: list[dict] = []
     for row in candidate_rows:
@@ -244,10 +245,9 @@ def update_interview_status(candidate_id: int, payload: dict):
     if l1 not in allowed or l2 not in allowed:
         raise HTTPException(status_code=400, detail="Invalid L1/L2 status")
 
-    con = legacy.db()
-    row = con.execute("SELECT stage,profile_details FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+    repo = _workspace_repo()
+    row = repo.get_row("candidates", candidate_id)
     if not row:
-        con.close()
         raise HTTPException(status_code=404, detail="Candidate not found")
 
     details = _safe_json(row["profile_details"])
@@ -262,21 +262,15 @@ def update_interview_status(candidate_id: int, payload: dict):
     else:
         details["interview_level"] = l1
 
-    con.execute(
-        "UPDATE candidates SET profile_details=?,updated_at=datetime('now') WHERE id=?",
-        (json.dumps(details), candidate_id),
+    repo.update_row(
+        "candidates",
+        candidate_id,
+        {
+            "profile_details": json.dumps(details),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        },
     )
-    con.commit()
-    con.close()
     return {"candidate_id": candidate_id, "l1_status": l1, "l2_status": l2}
-
-
-def _interview_select() -> str:
-    return """SELECT i.*,c.name AS candidate_name,c.email AS candidate_email,
-                     j.title AS job_title
-              FROM interviews i
-              JOIN candidates c ON c.id=i.candidate_id
-              LEFT JOIN jobs j ON j.id=i.job_id"""
 
 
 def _interview_dict(row) -> dict:
@@ -302,8 +296,8 @@ def _interview_dict(row) -> dict:
     }
 
 
-def _sync_candidate_round(con, candidate_id: int, round_name: str, state: str) -> None:
-    row = con.execute("SELECT profile_details FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+def _sync_candidate_round(repo: WorkspaceRepository, candidate_id: int, round_name: str, state: str) -> None:
+    row = repo.get_row("candidates", candidate_id)
     if not row:
         return
     details = _safe_json(row["profile_details"])
@@ -316,29 +310,23 @@ def _sync_candidate_round(con, candidate_id: int, round_name: str, state: str) -
     elif round_key.startswith("L2"):
         details["l2_status"] = state
         details["interview_level"] = "L2 Cleared" if state == "Cleared" else f"L2 {state}"
-    con.execute(
-        "UPDATE candidates SET profile_details=?,updated_at=datetime('now') WHERE id=?",
-        (json.dumps(details), candidate_id),
+    repo.update_row(
+        "candidates",
+        candidate_id,
+        {
+            "profile_details": json.dumps(details),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        },
     )
 
 
 @app.get("/api/interviews")
 def list_interviews(candidate_id: int | None = None, job_id: int | None = None, status: str = ""):
-    con = legacy.db()
-    sql = _interview_select() + " WHERE 1=1"
-    params: list = []
-    if candidate_id is not None:
-        sql += " AND i.candidate_id=?"
-        params.append(candidate_id)
-    if job_id is not None:
-        sql += " AND i.job_id=?"
-        params.append(job_id)
-    if status.strip():
-        sql += " AND i.status=?"
-        params.append(status.strip())
-    sql += " ORDER BY i.scheduled_at ASC,i.id DESC"
-    rows = con.execute(sql, params).fetchall()
-    con.close()
+    rows = _workspace_repo().list_interviews(
+        candidate_id=candidate_id,
+        job_id=job_id,
+        status=status,
+    )
     return [_interview_dict(row) for row in rows]
 
 
@@ -371,31 +359,34 @@ def create_interview(payload: dict):
     if duration < 15 or duration > 240:
         raise HTTPException(status_code=400, detail="Duration must be between 15 and 240 minutes")
 
-    con = legacy.db()
-    candidate = con.execute("SELECT id,job_id FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+    repo = _workspace_repo()
+    candidate = repo.get_row("candidates", candidate_id)
     if not candidate:
-        con.close()
         raise HTTPException(status_code=404, detail="Candidate not found")
     now = datetime.now(timezone.utc).isoformat()
-    cur = con.execute(
-        """INSERT INTO interviews(
-            candidate_id,job_id,round_name,interviewer_name,interviewer_email,
-            scheduled_at,timezone,duration_minutes,meeting_url,status,outcome,notes,
-            created_at,updated_at
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (
-            candidate_id,candidate["job_id"],round_name,
-            str(payload.get("interviewer_name") or "").strip(),
-            str(payload.get("interviewer_email") or "").strip(),
-            scheduled_at,timezone_name,duration,
-            str(payload.get("meeting_url") or "").strip(),
-            "Scheduled","Pending",str(payload.get("notes") or "").strip(),now,now,
-        ),
+    interview_id = repo.create_row(
+        "interviews",
+        {
+            "candidate_id": candidate_id,
+            "job_id": candidate["job_id"],
+            "round_name": round_name,
+            "interviewer_name": str(payload.get("interviewer_name") or "").strip(),
+            "interviewer_email": str(payload.get("interviewer_email") or "").strip(),
+            "scheduled_at": scheduled_at,
+            "timezone": timezone_name,
+            "duration_minutes": duration,
+            "meeting_url": str(payload.get("meeting_url") or "").strip(),
+            "status": "Scheduled",
+            "outcome": "Pending",
+            "notes": str(payload.get("notes") or "").strip(),
+            "created_at": now,
+            "updated_at": now,
+        },
     )
-    _sync_candidate_round(con, candidate_id, round_name, "Scheduled")
-    con.commit()
-    row = con.execute(_interview_select() + " WHERE i.id=?", (cur.lastrowid,)).fetchone()
-    con.close()
+    _sync_candidate_round(repo, candidate_id, round_name, "Scheduled")
+    row = repo.get_interview(interview_id)
+    if not row:
+        raise HTTPException(status_code=500, detail="Interview could not be reloaded")
     return _interview_dict(row)
 
 
@@ -403,10 +394,9 @@ def create_interview(payload: dict):
 def update_interview(interview_id: int, payload: dict):
     allowed_status = {"Scheduled", "Completed", "Cancelled"}
     allowed_outcome = {"Pending", "Cleared", "Rejected"}
-    con = legacy.db()
-    existing = con.execute("SELECT * FROM interviews WHERE id=?", (interview_id,)).fetchone()
+    repo = _workspace_repo()
+    existing = repo.get_interview(interview_id)
     if not existing:
-        con.close()
         raise HTTPException(status_code=404, detail="Interview not found")
 
     fields = {
@@ -428,40 +418,40 @@ def update_interview(interview_id: int, payload: dict):
     fields["status"] = str(fields["status"] or "Scheduled").strip()
     fields["outcome"] = str(fields["outcome"] or "Pending").strip()
     if fields["status"] not in allowed_status:
-        con.close()
         raise HTTPException(status_code=400, detail="Invalid interview status")
     if fields["outcome"] not in allowed_outcome:
-        con.close()
         raise HTTPException(status_code=400, detail="Invalid interview outcome")
     try:
         datetime.fromisoformat(str(fields["scheduled_at"]).replace("Z", "+00:00"))
         ZoneInfo(str(fields["timezone"] or "Asia/Kolkata"))
         fields["duration_minutes"] = int(fields["duration_minutes"] or 45)
     except Exception:
-        con.close()
         raise HTTPException(status_code=400, detail="Invalid schedule details")
 
-    con.execute(
-        """UPDATE interviews SET round_name=?,interviewer_name=?,interviewer_email=?,
-           scheduled_at=?,timezone=?,duration_minutes=?,meeting_url=?,status=?,outcome=?,notes=?,
-           updated_at=? WHERE id=?""",
-        (
-            str(fields["round_name"] or "").strip(),
-            str(fields["interviewer_name"] or "").strip(),
-            str(fields["interviewer_email"] or "").strip(),
-            str(fields["scheduled_at"]).strip(),str(fields["timezone"]).strip(),
-            fields["duration_minutes"],str(fields["meeting_url"] or "").strip(),
-            fields["status"],fields["outcome"],str(fields["notes"] or "").strip(),
-            datetime.now(timezone.utc).isoformat(),interview_id,
-        ),
+    repo.update_row(
+        "interviews",
+        interview_id,
+        {
+            "round_name": str(fields["round_name"] or "").strip(),
+            "interviewer_name": str(fields["interviewer_name"] or "").strip(),
+            "interviewer_email": str(fields["interviewer_email"] or "").strip(),
+            "scheduled_at": str(fields["scheduled_at"]).strip(),
+            "timezone": str(fields["timezone"]).strip(),
+            "duration_minutes": fields["duration_minutes"],
+            "meeting_url": str(fields["meeting_url"] or "").strip(),
+            "status": fields["status"],
+            "outcome": fields["outcome"],
+            "notes": str(fields["notes"] or "").strip(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        },
     )
     if fields["outcome"] in {"Cleared", "Rejected"}:
-        _sync_candidate_round(con, int(existing["candidate_id"]), str(fields["round_name"]), fields["outcome"])
+        _sync_candidate_round(repo, int(existing["candidate_id"]), str(fields["round_name"]), fields["outcome"])
     elif fields["status"] == "Scheduled":
-        _sync_candidate_round(con, int(existing["candidate_id"]), str(fields["round_name"]), "Scheduled")
-    con.commit()
-    row = con.execute(_interview_select() + " WHERE i.id=?", (interview_id,)).fetchone()
-    con.close()
+        _sync_candidate_round(repo, int(existing["candidate_id"]), str(fields["round_name"]), "Scheduled")
+    row = repo.get_interview(interview_id)
+    if not row:
+        raise HTTPException(status_code=500, detail="Interview could not be reloaded")
     return _interview_dict(row)
 
 
@@ -471,9 +461,7 @@ def _ics_escape(value: str) -> str:
 
 @app.get("/api/interviews/{interview_id}/calendar.ics")
 def interview_calendar(interview_id: int):
-    con = legacy.db()
-    row = con.execute(_interview_select() + " WHERE i.id=?", (interview_id,)).fetchone()
-    con.close()
+    row = _workspace_repo().get_interview(interview_id)
     if not row:
         raise HTTPException(status_code=404, detail="Interview not found")
     item = _interview_dict(row)
