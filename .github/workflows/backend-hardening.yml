@@ -5,6 +5,7 @@ on:
     branches:
       - backend-hardening-foundation
       - backend-postgres-migration
+      - engineering-stabilization-v2
       - main
   pull_request:
     branches:
@@ -38,6 +39,12 @@ jobs:
       - name: Migration runbook safety contract
         run: PYTHONPATH=. python tests/test_migration_runbook.py
 
+      - name: Repository layer regression
+        run: PYTHONPATH=. python tests/test_repository_layer.py
+
+      - name: Candidate persistence and 800-ingestion regression
+        run: PYTHONPATH=. python tests/test_candidate_persistence.py
+
       - name: Backend preflight regression
         run: PYTHONPATH=. python tests/test_backend_preflight.py
 
@@ -61,10 +68,10 @@ jobs:
 
   postgres-schema:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/backend-postgres-migration' || github.event_name == 'pull_request'
+    if: github.ref == 'refs/heads/backend-postgres-migration' || github.ref == 'refs/heads/engineering-stabilization-v2' || github.event_name == 'pull_request'
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_USER: shortlistai
           POSTGRES_PASSWORD: shortlistai
@@ -79,6 +86,7 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg://shortlistai:shortlistai@127.0.0.1:5432/shortlistai_test
       SQLITE_PATH: /tmp/shortlistai-postgres-schema.db
+      SHORTLISTAI_EXPOSE_RESET_LINK: 'false'
 
     steps:
       - name: Checkout
@@ -93,7 +101,7 @@ jobs:
         run: pip install -r requirements-dev.txt
 
       - name: Compile migration sources
-        run: python -m compileall -q shortlistai alembic scripts tests
+        run: python -m compileall -q shortlistai alembic scripts tests auth_runtime.py tenant_security.py
 
       - name: Upgrade PostgreSQL schema
         run: alembic upgrade head
@@ -104,7 +112,16 @@ jobs:
       - name: Verify repository workspace isolation
         run: PYTHONPATH=. python tests/test_workspace_repository.py
 
-      - name: Verify SQLite data copy
+      - name: Verify repository auth and tenant boundaries
+        run: PYTHONPATH=. python tests/test_repository_layer.py
+
+      - name: Verify auth routes on PostgreSQL
+        run: PYTHONPATH=. python tests/test_auth_routes_postgres.py
+
+      - name: Verify candidate persistence and 800-ingestion on PostgreSQL
+        run: PYTHONPATH=. python tests/test_candidate_persistence.py
+
+      - name: Verify SQLite backup, data copy, and search parity
         run: PYTHONPATH=. python tests/test_sqlite_to_postgres_migration.py
 
       - name: Verify reversible migration
