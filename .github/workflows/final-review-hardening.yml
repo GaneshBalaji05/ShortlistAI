@@ -14,6 +14,7 @@ on:
       - "static/theme-v2.js"
       - "tests/test_boolean_search.py"
       - "tests/test_final_review.py"
+      - "tests/test_bulk_ingestion_readiness.py"
       - ".github/workflows/final-review-hardening.yml"
   pull_request:
     branches: [main]
@@ -29,11 +30,13 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Python syntax
-        run: python -m py_compile main.py main/__init__.py final_review.py boolean_search.py shortlistai_talent.py demo_database_seed.py
+        run: python -m py_compile main.py main/__init__.py final_review.py boolean_search.py shortlistai_talent.py demo_database_seed.py tests/test_bulk_ingestion_readiness.py
       - name: Boolean search regression
         run: PYTHONPATH=. python tests/test_boolean_search.py
       - name: Final review regression
         run: PYTHONPATH=. python tests/test_final_review.py
+      - name: Bulk ingestion readiness contract
+        run: PYTHONPATH=. python tests/test_bulk_ingestion_readiness.py
       - name: JavaScript syntax
         run: |
           node --check static/final-review.js
@@ -156,11 +159,13 @@ jobs:
                   if status.get("duplicate_policy") != "merge":
                       raise AssertionError("Duplicate merge policy is not live")
                   if status.get("bulk_ui_limit") != 800:
-                      raise AssertionError("800-profile bulk limit is not live")
+                      raise AssertionError("800-profile UI selection limit is not live")
+                  if status.get("bulk_request_limit") != 50:
+                      raise AssertionError("Backend batch request contract changed; reassess #34 before calling large ingestion ready")
                   if not status.get("view_switcher"):
                       raise AssertionError("Mobile/Desktop switcher is not live")
                   if not probe.get("passed") or probe.get("bulk_count") != 600:
-                      raise AssertionError(f"Production 600-profile persistence probe failed: {probe}")
+                      raise AssertionError(f"Production 600-profile storage/searchability probe failed: {probe}")
                   if not probe.get("bulk_searchable") or not probe.get("scoring_stable") or not probe.get("duplicate_merge") or not probe.get("boolean_metadata_isolation"):
                       raise AssertionError(f"Production regression probe incomplete: {probe}")
 
@@ -188,15 +193,16 @@ jobs:
                   theme = get_text("/static/theme-v2.js?v=2")
                   if "viewModeToggle" not in html or "Desktop View" not in html or "shortlistai-view-mode" not in html:
                       raise AssertionError("Installed-app Mobile/Desktop switcher is not present")
-                  if "final-review.js" not in theme or "PIPELINE_STAGES" not in final_ui or "BULK_LIMIT = 800" not in final_ui:
-                      raise AssertionError("Final review UI assets are not live")
+                  if "final-review.js" not in theme or "PIPELINE_STAGES" not in final_ui or "BULK_LIMIT = 800" not in final_ui or "BATCH_SIZE = 40" not in final_ui:
+                      raise AssertionError("Final review UI assets or client batch contract are not live")
 
                   print(
                       "Production verification passed: auth protection confirmed; authenticated demo session established;",
                       status.get("candidate_total"), "stored candidates;",
                       len(java_rows), "Java results;",
                       len(complex_rows), "complex Boolean results;",
-                      "role pipeline, stable scoring, duplicate merge and 600-profile persistence probe passed."
+                      "role pipeline, stable scoring, duplicate merge and 600-profile storage/searchability probe passed;",
+                      "resumable 500-800 ingestion is not yet verified (#34)."
                   )
                   break
               except urllib.error.HTTPError as exc:
