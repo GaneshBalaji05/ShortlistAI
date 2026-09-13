@@ -1,5 +1,7 @@
 (() => {
   const KEY = 'shortlistai-login-view';
+  const UI_VERSION = 'login-v8';
+  const REFRESH_KEY = 'shortlistai-login-refresh-version';
   const mq = window.matchMedia('(max-width:900px)');
   const iconDesktop = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>';
   const iconMobile = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M10 5h4M11 19h2"/></svg>';
@@ -57,6 +59,32 @@
     window.scrollTo({top: 0, left: 0, behavior: 'smooth'});
   }
 
+  async function recoverStaleLoginPage() {
+    if (location.pathname !== '/') return false;
+    // The current login UI includes Forgot password. If it is missing, this page
+    // came from an older installed-app/browser cache.
+    if (document.getElementById('forgotPassword')) {
+      sessionStorage.setItem(REFRESH_KEY, UI_VERSION);
+      return false;
+    }
+    if (sessionStorage.getItem(REFRESH_KEY) === UI_VERSION) return false;
+    sessionStorage.setItem(REFRESH_KEY, UI_VERSION);
+    try {
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.filter(k => k.startsWith('shortlistai-')).map(k => caches.delete(k)));
+      }
+      if ('serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.getRegistration('/');
+        if (reg) await reg.update();
+      }
+    } catch (_) {}
+    const url = new URL(location.href);
+    url.searchParams.set('_ui', UI_VERSION);
+    location.replace(url.toString());
+    return true;
+  }
+
   function mount() {
     const btn = document.getElementById('viewToggle');
     if (!btn) return;
@@ -73,19 +101,24 @@
   function loadLoginFetchRecovery() {
     if (document.querySelector('script[data-login-fetch-recovery]')) return;
     const script = document.createElement('script');
-    script.src = '/static/login-fetch-fix.js?v=1';
+    script.src = '/static/login-fetch-fix.js?v=2';
     script.dataset.loginFetchRecovery = '1';
     script.defer = true;
     document.body.appendChild(script);
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-      mount();
-      loadLoginFetchRecovery();
-    }, {once:true});
-  } else {
+  async function start() {
+    if (await recoverStaleLoginPage()) return;
     mount();
     loadLoginFetchRecovery();
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistration('/').then(reg => reg?.update()).catch(() => {});
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start, {once:true});
+  } else {
+    start();
   }
 })();
