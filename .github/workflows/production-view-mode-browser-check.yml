@@ -1,0 +1,24 @@
+name: Production view mode browser check
+
+on:
+  push:
+    branches:
+      - fix/true-mobile-desktop-view
+
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Playwright
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm install playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Verify Mobile View and Desktop View on production
+        env:
+          SHORTLISTAI_URL: https://shortlistai-app.onrender.com
+        run: node tests/view_mode_browser_check.mjs
