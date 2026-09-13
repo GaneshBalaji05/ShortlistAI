@@ -77,7 +77,7 @@
   async function updateServiceWorker() {
     if (!('serviceWorker' in navigator)) return;
     try {
-      const registration = await navigator.serviceWorker.register('/sw.js?v=10', {scope: '/'});
+      const registration = await navigator.serviceWorker.register('/static/sw.js?v=10', {scope: '/'});
       await registration.update();
     } catch (_) {
       // Authentication must not depend on service-worker availability.
