@@ -10,13 +10,14 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Request, Response
 from pydantic import BaseModel
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = os.getenv("SQLITE_PATH", str(BASE_DIR / "shortlistai.db"))
 PBKDF2_ROUNDS = 260_000
 SESSION_DAYS = 30
+SESSION_COOKIE = "shortlistai_session"
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 
@@ -126,11 +127,72 @@ def _public_user(row: sqlite3.Row) -> dict:
     }
 
 
+def _ensure_demo_account(con: sqlite3.Connection) -> tuple[int, int]:
+    row = con.execute("SELECT * FROM users WHERE lower(email)=?", ("demo@shortlist.ai",)).fetchone()
+    if row:
+        return int(row["id"]), int(row["workspace_id"])
+    now = datetime.utcnow().isoformat()
+    workspace = con.execute("SELECT id FROM workspaces WHERE name=? ORDER BY id LIMIT 1", ("ShortlistAI Demo",)).fetchone()
+    if workspace:
+        workspace_id = int(workspace["id"])
+    else:
+        cur = con.execute("INSERT INTO workspaces(name,created_at) VALUES(?,?)", ("ShortlistAI Demo", now))
+        workspace_id = int(cur.lastrowid)
+    pw_hash, pw_salt = _hash_password("shortlist123")
+    cur = con.execute(
+        """INSERT INTO users(workspace_id,full_name,email,password_hash,password_salt,role,created_at,last_login_at)
+           VALUES(?,?,?,?,?,?,?,?)""",
+        (workspace_id, "Demo User", "demo@shortlist.ai", pw_hash, pw_salt, "Demo", now, now),
+    )
+    return int(cur.lastrowid), workspace_id
+
+
+def _session_row(raw_token: str):
+    if not raw_token:
+        return None
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    con = _connect()
+    try:
+        row = con.execute(
+            """SELECT s.expires_at,u.*,w.name workspace_name
+               FROM auth_sessions s JOIN users u ON u.id=s.user_id
+               LEFT JOIN workspaces w ON w.id=u.workspace_id
+               WHERE s.token_hash=?""",
+            (token_hash,),
+        ).fetchone()
+        if not row:
+            return None
+        if datetime.fromisoformat(row["expires_at"]) <= datetime.utcnow():
+            con.execute("DELETE FROM auth_sessions WHERE token_hash=?", (token_hash,))
+            con.commit()
+            return None
+        return row
+    finally:
+        con.close()
+
+
+def _set_cookie(response: Optional[Response], token: str, remember: bool) -> None:
+    if response is None:
+        return
+    secure = os.getenv("RENDER", "").lower() == "true" or os.getenv("SHORTLISTAI_SECURE_COOKIES", "").lower() in {"1", "true", "yes"}
+    response.set_cookie(
+        SESSION_COOKIE,
+        token,
+        httponly=True,
+        secure=secure,
+        samesite="lax",
+        path="/",
+        max_age=SESSION_DAYS * 86400 if remember else None,
+    )
+
+
 def install_auth_routes(app) -> None:
     _ensure_auth_schema()
 
     @app.post("/api/auth/register")
-    def register(payload: RegisterIn):
+    def register(payload: RegisterIn, response: Response = None):
+        from tenant_security import ensure_schema
+        ensure_schema()
         full_name = payload.full_name.strip()
         email = payload.email.strip().lower()
         workspace = payload.workspace_name.strip()
@@ -163,7 +225,11 @@ def install_auth_routes(app) -> None:
             token = _new_session(con, user_id, True)
             con.commit()
             user = con.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
-            return {"ok": True, "token": token, "user": _public_user(user), "workspace": workspace}
+            _set_cookie(response, token, True)
+            out = {"ok": True, "user": _public_user(user), "workspace": workspace}
+            if response is None:
+                out["token"] = token
+            return out
         except HTTPException:
             con.rollback()
             raise
@@ -174,19 +240,25 @@ def install_auth_routes(app) -> None:
             con.close()
 
     @app.post("/api/auth/login")
-    def login(payload: LoginIn):
+    def login(payload: LoginIn, response: Response = None):
+        from tenant_security import ensure_schema
+        ensure_schema()
         email = payload.email.strip().lower()
-        if email == "demo@shortlist.ai" and payload.password == "shortlist123":
-            return {
-                "ok": True,
-                "token": "demo-preview-session",
-                "user": {"id": 0, "full_name": "Demo User", "email": email, "role": "Demo", "workspace_id": 0},
-                "workspace": "ShortlistAI Demo",
-                "demo": True,
-            }
-
         con = _connect()
         try:
+            if email == "demo@shortlist.ai" and payload.password == "shortlist123":
+                user_id, _ = _ensure_demo_account(con)
+                row = con.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+                now = datetime.utcnow().isoformat()
+                con.execute("UPDATE users SET last_login_at=? WHERE id=?", (now, row["id"]))
+                token = _new_session(con, row["id"], payload.remember)
+                con.commit()
+                _set_cookie(response, token, payload.remember)
+                out = {"ok": True, "user": _public_user(row), "workspace": "ShortlistAI Demo", "demo": True}
+                if response is None:
+                    out["token"] = token
+                return out
+
             row = con.execute("SELECT * FROM users WHERE lower(email)=?", (email,)).fetchone()
             if not row or not _verify_password(payload.password, row["password_hash"], row["password_salt"]):
                 raise HTTPException(401, "Invalid email or password.")
@@ -195,57 +267,65 @@ def install_auth_routes(app) -> None:
             token = _new_session(con, row["id"], payload.remember)
             con.commit()
             workspace = con.execute("SELECT name FROM workspaces WHERE id=?", (row["workspace_id"],)).fetchone()
-            return {"ok": True, "token": token, "user": _public_user(row), "workspace": workspace["name"] if workspace else ""}
+            _set_cookie(response, token, payload.remember)
+            out = {"ok": True, "user": _public_user(row), "workspace": workspace["name"] if workspace else ""}
+            if response is None:
+                out["token"] = token
+            return out
         finally:
             con.close()
+
+    @app.get("/api/auth/session")
+    def browser_session(request: Request):
+        row = _session_row(request.cookies.get(SESSION_COOKIE, ""))
+        if row is None:
+            raise HTTPException(401, "Session expired. Please sign in again.")
+        return {"ok": True, "user": _public_user(row), "workspace": row["workspace_name"] or "", "demo": row["email"].lower() == "demo@shortlist.ai"}
 
     @app.post("/api/auth/session")
     def session(payload: TokenIn):
-        if payload.token == "demo-preview-session":
-            return {"ok": True, "user": {"id": 0, "full_name": "Demo User", "email": "demo@shortlist.ai", "role": "Demo", "workspace_id": 0}, "workspace": "ShortlistAI Demo", "demo": True}
-        token_hash = hashlib.sha256(payload.token.encode("utf-8")).hexdigest()
-        con = _connect()
-        try:
-            row = con.execute(
-                """SELECT s.expires_at,u.*,w.name workspace_name
-                   FROM auth_sessions s JOIN users u ON u.id=s.user_id
-                   LEFT JOIN workspaces w ON w.id=u.workspace_id
-                   WHERE s.token_hash=?""",
-                (token_hash,),
-            ).fetchone()
-            if not row or datetime.fromisoformat(row["expires_at"]) <= datetime.utcnow():
-                if row:
-                    con.execute("DELETE FROM auth_sessions WHERE token_hash=?", (token_hash,))
-                    con.commit()
-                raise HTTPException(401, "Session expired. Please sign in again.")
-            return {"ok": True, "user": _public_user(row), "workspace": row["workspace_name"] or ""}
-        finally:
-            con.close()
+        row = _session_row(payload.token)
+        if row is None:
+            raise HTTPException(401, "Session expired. Please sign in again.")
+        return {"ok": True, "user": _public_user(row), "workspace": row["workspace_name"] or "", "demo": row["email"].lower() == "demo@shortlist.ai"}
 
     @app.post("/api/auth/logout")
-    def logout(payload: TokenIn):
-        if payload.token != "demo-preview-session":
-            token_hash = hashlib.sha256(payload.token.encode("utf-8")).hexdigest()
+    def logout(payload: Optional[TokenIn] = None, response: Response = None, request: Request = None):
+        raw = request.cookies.get(SESSION_COOKIE, "") if request is not None else ""
+        if not raw and payload is not None:
+            raw = payload.token
+        if raw:
             con = _connect()
-            con.execute("DELETE FROM auth_sessions WHERE token_hash=?", (token_hash,))
+            con.execute("DELETE FROM auth_sessions WHERE token_hash=?", (hashlib.sha256(raw.encode("utf-8")).hexdigest(),))
             con.commit()
             con.close()
+        if response is not None:
+            response.delete_cookie(SESSION_COOKIE, path="/")
         return {"ok": True}
 
+    from tenant_security import install
+    install(app)
 
-def schedule_main_auth_patch(delay_seconds: float = 0.15) -> None:
+
+def schedule_main_auth_patch(delay_seconds: float = 0.05) -> None:
     import threading
     import time
 
     def worker():
-        for _ in range(100):
+        for _ in range(200):
             try:
                 import main
                 app = getattr(main, "app", None)
                 if app is not None:
                     paths = {getattr(r, "path", "") for r in app.routes}
+                    if "/app" not in paths:
+                        time.sleep(delay_seconds)
+                        continue
                     if "/api/auth/register" not in paths:
                         install_auth_routes(app)
+                    else:
+                        from tenant_security import install
+                        install(app)
                     return
             except Exception:
                 pass
