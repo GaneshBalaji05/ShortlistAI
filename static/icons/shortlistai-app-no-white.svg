@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">ShortlistAI app icon</title>
+  <desc id="desc">Full-bleed red ShortlistAI icon with a white S and dark AI check badge.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ff4b52"/>
+      <stop offset="0.55" stop-color="#ef2430"/>
+      <stop offset="1" stop-color="#b9000b"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <path d="M322 169c-14-19-37-29-69-29-50 0-85 25-85 64 0 35 24 52 71 62 35 8 47 14 47 31 0 16-15 26-39 26-29 0-50-11-66-32l-37 31c21 30 55 47 100 47 54 0 91-28 91-70 0-39-25-55-77-67-31-7-42-13-42-28 0-13 13-22 34-22 24 0 42 9 56 27l36-30Z" fill="#fff"/>
+  <circle cx="374" cy="363" r="60" fill="#0b0b0d" stroke="#ff7379" stroke-width="8"/>
+  <path d="M345 363l19 19 38-43" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="16"/>
+  <rect x="392" y="300" width="56" height="29" rx="14.5" fill="#0b0b0d"/>
+  <text x="420" y="321" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="800" letter-spacing="1" fill="#fff">AI</text>
+</svg>
