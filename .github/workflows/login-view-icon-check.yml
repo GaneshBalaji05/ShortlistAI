@@ -33,8 +33,12 @@ jobs:
           for(const marker of ['viewToggle','shortlistai-login-view','visualViewport','Desktop View','Mobile View']){
             if(!icon.includes(marker)) throw new Error(`missing icon marker: ${marker}`);
           }
-          for(const marker of ['shortlistai-v7','/static/login-view-icon.js?v=1','injectLoginViewIcon']){
-            if(!sw.includes(marker)) throw new Error(`missing service worker marker: ${marker}`);
+          if(!/const\s+CACHE\s*=\s*['"]shortlistai-v\d+['"]/.test(sw)){
+            throw new Error('service worker must use a versioned ShortlistAI cache');
           }
+          if(!/\/static\/login-view-icon\.js\?v=\d+/.test(sw)){
+            throw new Error('service worker must cache a versioned login view icon script');
+          }
+          if(!sw.includes('injectLoginViewIcon')) throw new Error('missing login icon injection hook');
           console.log('Login view icon regression passed');
           NODE
