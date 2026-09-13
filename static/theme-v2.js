@@ -40,4 +40,19 @@
   function escapeHtml(value){
     return String(value || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   }
+
+  if (!document.querySelector('link[data-shortlist-assist]')) {
+    const css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = '/static/assist-v1.css?v=1';
+    css.dataset.shortlistAssist = '1';
+    document.head.appendChild(css);
+  }
+  if (!document.querySelector('script[data-shortlist-assist]')) {
+    const script = document.createElement('script');
+    script.src = '/static/assist-v1.js?v=1';
+    script.defer = true;
+    script.dataset.shortlistAssist = '1';
+    document.body.appendChild(script);
+  }
 })();
