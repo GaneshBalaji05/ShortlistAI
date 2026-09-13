@@ -1,0 +1,243 @@
+name: P0 Auth Stabilization
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "auth_runtime.py"
+      - "tenant_security.py"
+      - "main/__init__.py"
+      - "static/login.html"
+      - "static/login-controller.js"
+      - "static/login-view-icon.js"
+      - "static/sw.js"
+      - "tests/test_auth_recovery.py"
+      - "tests/test_create_account.py"
+      - "tests/test_tenant_security.py"
+      - "tests/test_login_single_controller.py"
+      - "tests/test_auth_stabilization_gate.py"
+      - ".github/workflows/auth-stabilization-check.yml"
+  push:
+    branches: [main]
+    paths:
+      - "auth_runtime.py"
+      - "tenant_security.py"
+      - "main/__init__.py"
+      - "static/login.html"
+      - "static/login-controller.js"
+      - "static/login-view-icon.js"
+      - "static/sw.js"
+      - "tests/test_auth_recovery.py"
+      - "tests/test_create_account.py"
+      - "tests/test_tenant_security.py"
+      - "tests/test_login_single_controller.py"
+      - "tests/test_auth_stabilization_gate.py"
+      - ".github/workflows/auth-stabilization-check.yml"
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Compile auth/runtime sources
+        run: python -m py_compile auth_runtime.py tenant_security.py main/__init__.py tests/test_auth_stabilization_gate.py
+      - name: Backend auth recovery
+        run: PYTHONPATH=. python tests/test_auth_recovery.py
+      - name: Create Account and session lifecycle
+        run: PYTHONPATH=. python tests/test_create_account.py
+      - name: Workspace isolation
+        run: PYTHONPATH=. python tests/test_tenant_security.py
+      - name: Frontend single-controller contract
+        run: PYTHONPATH=. python tests/test_login_single_controller.py
+      - name: Integrated P0 auth gate
+        run: PYTHONPATH=. python tests/test_auth_stabilization_gate.py
+      - name: Frontend JavaScript syntax
+        run: |
+          node --check static/login-controller.js
+          node --check static/login-view-icon.js
+          node --check static/sw.js
+
+  production:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: regression
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify production auth flow
+        run: |
+          python - <<'PY'
+          import http.cookiejar
+          import json
+          import re
+          import time
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          ROOT = "https://shortlistai-app.onrender.com"
+
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          def json_request(path, *, method="GET", payload=None, opener=None, expected=200):
+              opener = opener or urllib.request.build_opener()
+              data = None if payload is None else json.dumps(payload).encode("utf-8")
+              headers = {"Accept": "application/json"}
+              if data is not None:
+                  headers["Content-Type"] = "application/json"
+              request = urllib.request.Request(ROOT + path, data=data, method=method, headers=headers)
+              try:
+                  response = opener.open(request, timeout=40)
+                  status = response.status
+                  raw = response.read().decode("utf-8", errors="ignore")
+                  body = json.loads(raw or "{}")
+                  response_headers = response.headers
+              except urllib.error.HTTPError as exc:
+                  status = exc.code
+                  raw = exc.read().decode("utf-8", errors="ignore")
+                  try:
+                      body = json.loads(raw or "{}")
+                  except json.JSONDecodeError:
+                      body = {"raw": raw}
+                  response_headers = exc.headers
+              if status != expected:
+                  raise AssertionError(f"{method} {path}: HTTP {status}, expected {expected}: {body}")
+              return body, response_headers
+
+          def get_text(path, opener=None):
+              opener = opener or urllib.request.build_opener()
+              with opener.open(ROOT + path, timeout=40) as response:
+                  if response.status != 200:
+                      raise AssertionError(f"GET {path}: HTTP {response.status}")
+                  return response.read().decode("utf-8", errors="ignore")
+
+          def production_probe():
+              # Frontend contract is live and exposes the three required auth flows.
+              html = get_text("/")
+              for marker in ('id="createTab"', 'id="forgotPassword"', 'id="resetForm"', 'data-login-controller'):
+                  if marker not in html:
+                      raise AssertionError(f"Production login page missing {marker}")
+              sw = get_text("/sw.js")
+              if "url.pathname.startsWith('/api/')" not in sw or "request.mode === 'navigate'" not in sw:
+                  raise AssertionError("Production service worker auth/network contract is not live")
+
+              # Anonymous protected data must be rejected.
+              json_request("/api/candidates", expected=401)
+
+              # Invalid credentials must fail safely and registration validation must be live.
+              json_request(
+                  "/api/auth/login",
+                  method="POST",
+                  payload={"email": "demo@shortlist.ai", "password": "definitely-wrong", "remember": False},
+                  expected=401,
+              )
+              json_request(
+                  "/api/auth/register",
+                  method="POST",
+                  payload={
+                      "full_name": "QA",
+                      "email": "not-an-email",
+                      "password": "Secure123",
+                      "confirm_password": "Secure123",
+                      "workspace_name": "QA",
+                  },
+                  expected=400,
+              )
+
+              # Forgot/reset negative paths are production-reachable without creating users
+              # or exposing reset tokens. Positive reset is covered in the integrated DB gate.
+              forgot, _ = json_request(
+                  "/api/auth/forgot-password",
+                  method="POST",
+                  payload={"email": "auth-smoke-missing@invalid.example"},
+                  expected=200,
+              )
+              if not forgot.get("ok") or "reset_url" in forgot:
+                  raise AssertionError(f"Forgot-password enumeration/reset-link contract failed: {forgot}")
+              json_request(
+                  "/api/auth/reset-password",
+                  method="POST",
+                  payload={"token": "invalid-auth-smoke-token", "password": "Secure123", "confirm_password": "Secure123"},
+                  expected=400,
+              )
+
+              # Discover the intentionally public demo contract and validate real cookie auth.
+              match = re.search(r"([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})\s*·\s*([A-Za-z0-9]{8,})", html)
+              if not match:
+                  raise AssertionError("Production demo-login contract is missing")
+              email, password = match.group(1), match.group(2)
+              jar = http.cookiejar.CookieJar()
+              client = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+              logged, login_headers = json_request(
+                  "/api/auth/login",
+                  method="POST",
+                  payload={"email": email, "password": password, "remember": False},
+                  opener=client,
+                  expected=200,
+              )
+              cookies = "\n".join(login_headers.get_all("Set-Cookie") or [])
+              if not logged.get("ok") or not logged.get("demo"):
+                  raise AssertionError(f"Production demo login failed: {logged}")
+              for required in ("shortlistai_session=", "HttpOnly", "Secure"):
+                  if required not in cookies:
+                      raise AssertionError(f"Production session cookie missing {required}")
+              session, _ = json_request("/api/auth/session", opener=client, expected=200)
+              if not session.get("ok") or not session.get("demo"):
+                  raise AssertionError(f"Production browser session failed: {session}")
+              get_text("/app", opener=client)
+              rows, _ = json_request(
+                  "/api/candidates?" + urllib.parse.urlencode({"q": "__p0_auth_smoke_no_match__"}),
+                  opener=client,
+                  expected=200,
+              )
+              if not isinstance(rows, list):
+                  raise AssertionError("Protected candidate API did not return a list")
+
+              # Logout must revoke server state and stale cookies must not reopen the session.
+              _, logout_headers = json_request("/api/auth/logout", method="POST", opener=client, expected=200)
+              logout_cookie = "\n".join(logout_headers.get_all("Set-Cookie") or []).lower()
+              if "shortlistai_session=" not in logout_cookie or "max-age=0" not in logout_cookie:
+                  raise AssertionError("Production logout did not clear the session cookie")
+              json_request("/api/auth/session", opener=client, expected=401)
+
+              # A fresh login after logout confirms recovery rather than a stuck auth state.
+              relogged, _ = json_request(
+                  "/api/auth/login",
+                  method="POST",
+                  payload={"email": email, "password": password, "remember": False},
+                  opener=client,
+                  expected=200,
+              )
+              if not relogged.get("ok"):
+                  raise AssertionError("Production re-login after logout failed")
+              json_request("/api/auth/logout", method="POST", opener=client, expected=200)
+
+              # /app must redirect signed-out clients back to the login page.
+              no_redirect = urllib.request.build_opener(NoRedirect())
+              try:
+                  no_redirect.open(ROOT + "/app", timeout=40)
+              except urllib.error.HTTPError as exc:
+                  if exc.code != 303 or exc.headers.get("Location") != "/":
+                      raise AssertionError(f"Anonymous /app redirect incorrect: {exc.code} {exc.headers.get('Location')}")
+              else:
+                  raise AssertionError("Anonymous /app unexpectedly returned 200")
+
+              print("P0 production auth smoke passed: login/session/protection/logout/re-login, auth UI, PWA contract and safe recovery endpoints are live")
+
+          last = None
+          for attempt in range(36):
+              try:
+                  production_probe()
+                  break
+              except Exception as exc:
+                  last = exc
+                  if attempt == 35:
+                      raise
+                  print(f"Production auth not ready ({attempt + 1}/36): {exc}")
+                  time.sleep(10)
+          PY
