@@ -2,9 +2,11 @@ import { chromium } from 'playwright';
 
 const root = process.env.SHORTLISTAI_URL || 'https://shortlistai-view-mode-preview.onrender.com';
 const browser = await chromium.launch({ headless: true });
+const sessionScript = () => localStorage.setItem('shortlistai-preview-session', JSON.stringify({ email: 'view-mode-ci@shortlistai.local' }));
 
 async function verifyMobileViewport() {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await context.addInitScript(sessionScript);
   const page = await context.newPage();
   await page.goto(`${root}/app`, { waitUntil: 'networkidle', timeout: 120000 });
   await page.waitForSelector('#frViewModeControl', { state: 'visible', timeout: 60000 });
@@ -34,6 +36,7 @@ async function verifyMobileViewport() {
 
 async function verifyDesktopViewport() {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  await context.addInitScript(sessionScript);
   const page = await context.newPage();
   await page.goto(`${root}/app`, { waitUntil: 'networkidle', timeout: 120000 });
   await page.waitForSelector('#frViewModeControl', { state: 'visible', timeout: 60000 });
