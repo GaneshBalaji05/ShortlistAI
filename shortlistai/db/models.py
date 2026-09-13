@@ -97,6 +97,23 @@ class Candidate(Base):
     talent_pools: Mapped[str | None] = mapped_column(Text)
 
 
+class CandidateIdentity(Base):
+    __tablename__ = "candidate_identities"
+    __table_args__ = (
+        Index("idx_candidate_identities_candidate", "workspace_id", "candidate_id"),
+    )
+
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), primary_key=True
+    )
+    identity_type: Mapped[str] = mapped_column(String(32), primary_key=True)
+    identity_value: Mapped[str] = mapped_column(Text, primary_key=True)
+    candidate_id: Mapped[int] = mapped_column(
+        ForeignKey("candidates.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class Note(Base):
     __tablename__ = "notes"
     __table_args__ = (
