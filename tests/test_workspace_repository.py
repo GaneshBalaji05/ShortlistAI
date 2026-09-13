@@ -5,11 +5,16 @@ import os
 from sqlalchemy import text
 
 from shortlistai.db.repositories import WorkspaceRepository
-from shortlistai.db.runtime import create_database_engine
+from shortlistai.db.runtime import create_database_engine, is_postgres_url, normalize_database_url
 
 
 def main() -> None:
-    engine = create_database_engine(os.environ["DATABASE_URL"])
+    database_url = normalize_database_url(os.getenv("DATABASE_URL", ""))
+    if not is_postgres_url(database_url):
+        print("SKIP: Workspace repository integration test requires DATABASE_URL")
+        return
+
+    engine = create_database_engine(database_url)
     with engine.begin() as connection:
         w1 = connection.execute(
             text("INSERT INTO workspaces(name,created_at) VALUES('Workspace One','2026-09-14') RETURNING id")
