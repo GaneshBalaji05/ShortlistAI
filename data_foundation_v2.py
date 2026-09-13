@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 from fastapi import File, Form, HTTPException, UploadFile
 
 import data_foundation as foundation
+import ingestion_runtime as ingestion
 from final_review import STAGE_RANK, canonical_stage
 
 
@@ -204,7 +205,7 @@ foundation._upsert_candidate = _pipeline_upsert
 
 
 def _install_safe_bulk_profile_route(app, legacy) -> None:
-    """Replace only the bulk-profile persistence route to isolate each item with a savepoint."""
+    """Keep the bulk-upload API while persisting resumable batch/item state underneath it."""
     foundation._remove_route(app, "/api/profiles/bulk", "POST")
 
     @app.post("/api/profiles/bulk")
@@ -221,67 +222,30 @@ def _install_safe_bulk_profile_route(app, legacy) -> None:
                 detail=f"Bulk profile limit is {foundation.MAX_BULK_ITEMS} per request.",
             )
         con = legacy.db()
-        created = merged = failed = 0
-        errors: list[dict[str, str]] = []
         try:
             if job_id is not None and not con.execute("SELECT id FROM jobs WHERE id=?", (job_id,)).fetchone():
                 raise HTTPException(status_code=404, detail="Job not found in this workspace")
-            for index, profile in enumerate(profiles, 1):
-                filename = profile.filename or f"profile-{index}"
-                savepoint = f"profile_{index}"
-                con.execute(f"SAVEPOINT {savepoint}")
-                try:
-                    text = legacy.extract_text(filename, await profile.read())
-                    if len(text.strip()) < 80:
-                        raise ValueError("Very little readable text was extracted")
-                    details = legacy.extract_profile_details(text, filename)
-                    incoming = {
-                        "name": legacy.detect_name(text, filename),
-                        "email": legacy.detect_email(text),
-                        "phone": legacy.detect_phone(text),
-                        "experience": legacy.parse_candidate_years(text),
-                        "skills": ", ".join(legacy.find_skills(text)),
-                        "resume_text": text,
-                        "resume_filename": filename,
-                        "source": source,
-                        "notice_period": details.get("notice_period") or "",
-                        "current_ctc": details.get("current_ctc") or "",
-                        "expected_ctc": details.get("expected_ctc") or "",
-                        "profile_details": details,
-                        "talent_pools": legacy.classify_talent_pools(
-                            text,
-                            details.get("skills") or "",
-                            json.dumps(details, ensure_ascii=False),
-                        ),
-                        "job_id": job_id,
-                        "stage": "Sourced",
-                    }
-                    result = foundation._upsert_candidate(con, legacy, incoming, "Bulk profile upload")
-                    con.execute(f"RELEASE SAVEPOINT {savepoint}")
-                    merged += int(result["merged"])
-                    created += int(not result["merged"])
-                except Exception as exc:
-                    con.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
-                    con.execute(f"RELEASE SAVEPOINT {savepoint}")
-                    failed += 1
-                    errors.append({"file": filename, "error": str(exc)})
-                if index % 25 == 0:
-                    con.commit()
-            con.commit()
-            total = con.execute("SELECT COUNT(*) FROM candidates").fetchone()[0]
-            return {
-                "received": len(profiles),
-                "created": created,
-                "merged": merged,
-                "skipped": 0,
-                "failed": failed,
-                "total_candidates": int(total),
-                "errors": errors[:50],
-                "error_count": len(errors),
-            }
-        except Exception:
+            batch_id, resumed = await ingestion.stage_uploaded_profiles(
+                con,
+                legacy,
+                profiles,
+                job_id=job_id,
+                source=source,
+            )
+            before = ingestion.current_counts(con, batch_id)
+            ingestion.process_ingestion_batch(con, legacy, batch_id)
+            return ingestion.batch_response(
+                con,
+                batch_id,
+                before_counts=before,
+                resumed=resumed,
+            )
+        except HTTPException:
             con.rollback()
             raise
+        except Exception as exc:
+            con.rollback()
+            raise HTTPException(status_code=500, detail=f"Bulk candidate import failed: {exc}")
         finally:
             con.close()
 
@@ -307,6 +271,7 @@ def schedule_data_foundation_v2_patch(timeout_seconds: float = 15.0) -> None:
             ):
                 try:
                     foundation.install_data_foundation(app, legacy)
+                    ingestion.ensure_ingestion_schema()
                     _install_safe_bulk_profile_route(app, legacy)
                 except Exception as exc:
                     print(f"ShortlistAI data foundation v2 patch failed: {exc}", file=sys.stderr)
