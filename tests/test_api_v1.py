@@ -10,7 +10,7 @@ from fastapi import FastAPI, Response
 
 import auth_runtime
 import tenant_security
-from shortlistai.api.v1 import install_api_v1
+from shortlistai.api.v1 import install_api_v1, resolved_route_paths
 
 
 def endpoint(app, path, method):
@@ -123,14 +123,14 @@ def run():
             "/api/v1/jobs",
             "/api/v1/jobs/{job_id}",
         }
-        route_paths = {getattr(route, "path", "") for route in app.routes}
+        route_paths = resolved_route_paths(app.routes)
         assert required_v1 <= route_paths, f"Missing API v1 routes: {sorted(required_v1 - route_paths)}"
 
         # Independently prove that the actual uvicorn main:app runtime receives the same
         # complete v1 surface. This prevents the isolated test composition from masking a
         # production registration defect.
         import main as runtime_main
-        production_paths = {getattr(route, "path", "") for route in runtime_main.app.routes}
+        production_paths = resolved_route_paths(runtime_main.app.routes)
         assert required_v1 <= production_paths, (
             f"Production runtime missing API v1 routes: {sorted(required_v1 - production_paths)}"
         )
