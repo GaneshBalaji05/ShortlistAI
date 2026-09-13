@@ -1,0 +1,13 @@
+- [ ] Hardening foundation merged
+- [ ] PostgreSQL migration PR approved
+- [ ] Core routes migrated to explicit repositories
+- [ ] Render workspace explicitly selected
+- [ ] Managed PostgreSQL provisioned
+- [ ] Production SQLite snapshot captured
+- [ ] Dry-run migration counts verified
+- [ ] PostgreSQL copy rehearsal verified
+- [ ] Maintenance/write-freeze window approved
+- [ ] Final copy verified
+- [ ] DATABASE_URL attached
+- [ ] Production smoke tests passed
+- [ ] Rollback window closed only after verification

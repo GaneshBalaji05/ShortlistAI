@@ -1,0 +1,1 @@
+This migration branch is not a production deployment branch. Do not point the live Render service at this branch or attach DATABASE_URL solely because these files exist. Production cutover requires the runbook gates and explicit approval.

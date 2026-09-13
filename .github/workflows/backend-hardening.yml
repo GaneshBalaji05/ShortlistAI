@@ -1,0 +1,114 @@
+name: Backend Hardening
+
+on:
+  push:
+    branches:
+      - backend-hardening-foundation
+      - backend-postgres-migration
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  backend-regression:
+    runs-on: ubuntu-latest
+    env:
+      SQLITE_PATH: /tmp/shortlistai-backend-hardening.db
+      SHORTLISTAI_EXPOSE_RESET_LINK: 'false'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Compile backend sources
+        run: python -m compileall -q .
+
+      - name: Database runtime contract
+        run: PYTHONPATH=. python tests/test_database_runtime.py
+
+      - name: Migration runbook safety contract
+        run: PYTHONPATH=. python tests/test_migration_runbook.py
+
+      - name: Backend preflight regression
+        run: PYTHONPATH=. python tests/test_backend_preflight.py
+
+      - name: Authentication recovery regression
+        run: PYTHONPATH=. python tests/test_auth_recovery.py
+
+      - name: Tenant isolation regression
+        run: PYTHONPATH=. python tests/test_tenant_security.py
+
+      - name: Account creation regression
+        run: PYTHONPATH=. python tests/test_create_account.py
+
+      - name: Boolean search regression
+        run: PYTHONPATH=. python tests/test_boolean_search.py
+
+      - name: Talent pool regression
+        run: PYTHONPATH=. python tests/test_talent_pool.py
+
+      - name: Final review regression
+        run: PYTHONPATH=. python tests/test_final_review.py
+
+  postgres-schema:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/backend-postgres-migration' || github.event_name == 'pull_request'
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: shortlistai
+          POSTGRES_PASSWORD: shortlistai
+          POSTGRES_DB: shortlistai_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U shortlistai -d shortlistai_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+psycopg://shortlistai:shortlistai@127.0.0.1:5432/shortlistai_test
+      SQLITE_PATH: /tmp/shortlistai-postgres-schema.db
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Compile migration sources
+        run: python -m compileall -q shortlistai alembic scripts tests
+
+      - name: Upgrade PostgreSQL schema
+        run: alembic upgrade head
+
+      - name: Verify PostgreSQL schema contract
+        run: PYTHONPATH=. python tests/test_postgres_schema.py
+
+      - name: Verify repository workspace isolation
+        run: PYTHONPATH=. python tests/test_workspace_repository.py
+
+      - name: Verify SQLite data copy
+        run: PYTHONPATH=. python tests/test_sqlite_to_postgres_migration.py
+
+      - name: Verify reversible migration
+        run: |
+          alembic downgrade base
+          alembic upgrade head
+          PYTHONPATH=. python tests/test_postgres_schema.py
