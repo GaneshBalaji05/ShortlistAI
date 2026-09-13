@@ -57,7 +57,21 @@ def api_job(job_id: int):
 
 
 def install_api_v1(app) -> None:
-    if getattr(app.state, "shortlistai_api_v1", False):
+    expected_paths = {getattr(route, "path", "") for route in router.routes}
+    if not expected_paths:
+        raise RuntimeError("API v1 router contains no routes")
+
+    existing_paths = {getattr(route, "path", "") for route in app.routes}
+    if expected_paths <= existing_paths:
+        app.state.shortlistai_api_v1 = True
         return
+
+    # Do not trust only an app-state flag: import/re-entry during the legacy compatibility
+    # phase can leave state behind. The route table itself is the source of truth.
     app.include_router(router)
+
+    installed_paths = {getattr(route, "path", "") for route in app.routes}
+    missing = expected_paths - installed_paths
+    if missing:
+        raise RuntimeError(f"API v1 route installation incomplete: {sorted(missing)}")
     app.state.shortlistai_api_v1 = True
