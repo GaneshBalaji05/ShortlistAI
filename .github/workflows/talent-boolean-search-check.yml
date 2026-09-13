@@ -1,0 +1,116 @@
+name: Talent Boolean search checks
+
+on:
+  pull_request:
+    paths:
+      - "boolean_search.py"
+      - "shortlistai_talent.py"
+      - "tests/test_boolean_search.py"
+      - ".github/workflows/talent-boolean-search-check.yml"
+  push:
+    branches: [main]
+    paths:
+      - "boolean_search.py"
+      - "shortlistai_talent.py"
+      - "tests/test_boolean_search.py"
+      - ".github/workflows/talent-boolean-search-check.yml"
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python -m unittest tests.test_boolean_search
+
+  production:
+    if: github.event_name == 'push'
+    needs: unit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify Boolean search against stored production candidates
+        run: |
+          python - <<'PY'
+          import json
+          import re
+          import time
+          import urllib.parse
+          import urllib.request
+
+          BASE = "https://shortlistai-app.onrender.com/api/candidates"
+
+          def get_candidates(q=None):
+              url = BASE
+              if q is not None:
+                  url += "?" + urllib.parse.urlencode({"q": q})
+              with urllib.request.urlopen(url, timeout=30) as response:
+                  if response.status != 200:
+                      raise RuntimeError(f"HTTP {response.status} for {url}")
+                  return json.load(response)
+
+          def flat(value):
+              if value is None:
+                  return ""
+              if isinstance(value, dict):
+                  return " ".join(str(k) + " " + flat(v) for k, v in value.items())
+              if isinstance(value, list):
+                  return " ".join(flat(v) for v in value)
+              return str(value)
+
+          def has_word(text, word):
+              return re.search(r"(?<![a-z0-9])" + re.escape(word.lower()) + r"(?![a-z0-9])", text.lower()) is not None
+
+          last_error = None
+          for attempt in range(30):
+              try:
+                  all_rows = get_candidates()
+                  java_rows = get_candidates("Java")
+                  complex_rows = get_candidates('Java AND ("Spring Boot" OR Spring) NOT Python')
+
+                  false_java = [
+                      row for row in java_rows
+                      if not has_word(flat(row), "java")
+                  ]
+                  if false_java:
+                      raise AssertionError(
+                          "Java search returned rows without genuine Java evidence: "
+                          + ", ".join(str(r.get("name") or r.get("id")) for r in false_java[:10])
+                      )
+
+                  python_only = [
+                      row for row in all_rows
+                      if has_word(flat(row), "python") and not has_word(flat(row), "java")
+                  ]
+                  java_ids = {row.get("id") for row in java_rows}
+                  leaked_python = [row for row in python_only if row.get("id") in java_ids]
+                  if leaked_python:
+                      raise AssertionError(
+                          "Python-only profiles leaked into Java search: "
+                          + ", ".join(str(r.get("name") or r.get("id")) for r in leaked_python[:10])
+                      )
+
+                  for row in complex_rows:
+                      text = flat(row)
+                      if not has_word(text, "java"):
+                          raise AssertionError(f"Complex query returned non-Java row: {row.get('name')}")
+                      if not ("spring boot" in text.lower() or has_word(text, "spring")):
+                          raise AssertionError(f"Complex query returned row without Spring evidence: {row.get('name')}")
+                      if has_word(text, "python"):
+                          raise AssertionError(f"Complex query returned Python row despite NOT Python: {row.get('name')}")
+
+                  print(f"Production verification passed: {len(all_rows)} stored candidates; {len(java_rows)} Java results; {len(complex_rows)} complex-query results; {len(python_only)} Python-only profiles checked.")
+                  break
+              except Exception as exc:
+                  last_error = exc
+                  if attempt == 29:
+                      raise
+                  print(f"Production not ready yet ({attempt + 1}/30): {exc}")
+                  time.sleep(10)
+          PY
