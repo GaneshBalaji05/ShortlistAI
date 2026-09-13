@@ -1,39 +1,53 @@
 # ShortlistAI Data Foundation
 
-## Current production reality
+## Current production state
 
-ShortlistAI currently uses a local SQLite database selected by `SQLITE_PATH`. The live Render web service is on a free web-service plan, so a local SQLite file must not be treated as the long-term production durability layer unless it is explicitly placed on durable storage.
+ShortlistAI production still reads and writes through the existing SQLite runtime. The repository now also contains a PostgreSQL-capable SQLAlchemy/Alembic foundation, but production cutover is intentionally not enabled yet.
 
-This stabilization phase deliberately does **not** flip the live application to PostgreSQL yet. The existing application, auth runtime, tenant security layer, SQL rewriting, views, tests and runtime patches are SQLite-specific. Changing only `DATABASE_URL` or replacing `sqlite3.connect()` would risk authentication, workspace isolation and candidate data integrity.
+The safe strategy is therefore a compatibility bridge: harden the current SQLite path and candidate-ingestion behavior now, while keeping every new data invariant represented in the PostgreSQL schema and migration tooling.
 
 ## Data Foundation v1
 
-The v1 layer adds the safeguards needed before a database migration:
+This phase adds:
 
-- SQLite WAL mode, a 5-second busy timeout, foreign keys and NORMAL synchronous mode on ATS/auth connections.
-- A tenant-scoped `candidate_identities` table with strong identity keys for normalized email, normalized phone and resume fingerprint.
-- Merge-on-duplicate candidate saves rather than reject/skip behavior.
+- SQLite WAL mode, a 5-second busy timeout, foreign keys and NORMAL synchronous mode for the current ATS/auth connections.
+- A tenant-scoped `candidate_identities` table with normalized email, normalized phone and resume-fingerprint keys.
+- Merge-on-duplicate candidate saves instead of reject/skip behavior.
 - Identity refresh and activity logging after merges.
 - Structured bulk candidate ingestion up to 800 records per request.
 - Sequential bulk resume ingestion up to 800 files, with chunk commits and per-file error reporting.
 - `/api/data-health` for candidate count, identity count and active SQLite safety settings.
 - Regression coverage for 800 candidates, Boolean search, duplicate merge, bulk resume merge and workspace isolation.
+- PostgreSQL `candidate_identities` model + Alembic migration so duplicate-safety data survives future cutover.
+- SQLite-to-PostgreSQL copy support for `candidate_identities`.
 
-## PostgreSQL migration path
+## PostgreSQL integration
 
-1. Keep the SQLite runtime stable and fully covered by regression tests.
-2. Introduce a storage adapter/repository layer that exposes candidate, job, interview, notes, activity and auth operations without relying on SQLite SQL rewriting.
-3. Implement a PostgreSQL adapter using explicit `workspace_id` predicates and database constraints.
-4. Build a read-only migration verifier that compares row counts, workspace counts, candidate identities and representative search results between SQLite and PostgreSQL.
-5. Take an export/backup of the live SQLite data and migrate into PostgreSQL.
-6. Run verification before changing the production storage selector.
-7. Cut over production only after auth, tenant isolation, 500–800 profile ingestion, duplicate merge, Boolean search, scoring and pipeline regression tests pass against PostgreSQL.
-8. Keep a rollback path until production verification is complete.
+The existing PostgreSQL foundation provides:
 
-## Non-negotiable migration rules
+- `DATABASE_URL` resolution with PostgreSQL support and SQLite fallback.
+- SQLAlchemy workspace-aware models and repository boundaries.
+- Alembic schema migrations.
+- A guarded SQLite-to-PostgreSQL migration command.
+- PostgreSQL CI/schema validation and a cutover/rollback runbook.
+
+Data Foundation v1 deliberately does **not** change live routes to PostgreSQL. The current auth and ATS runtime still depends on SQLite-specific behavior and tenant-security compatibility code.
+
+## Next engineering step
+
+1. Move auth operations to the SQLAlchemy database abstraction while preserving cookie/session behavior.
+2. Move core ATS jobs/candidates/notes/activity/interviews routes to explicit workspace repositories.
+3. Implement candidate identity lookup/refresh through the same repository boundary.
+4. Run the complete auth, workspace-isolation, Boolean-search, duplicate-merge, scoring, pipeline and 500–800 profile tests against PostgreSQL.
+5. Export and verify the current production SQLite source before any copy.
+6. Run a migration dry-run and compare row counts, workspace counts, candidate identities and representative search results.
+7. Copy into an empty PostgreSQL target and repeat verification.
+8. Enable production PostgreSQL only after the verified cutover; keep rollback available until production smoke checks pass.
+
+## Non-negotiable rules
 
 - Never migrate only part of auth or ATS data.
-- Never remove `workspace_id` isolation during migration.
-- Never mark migration complete from schema creation alone; production behavior must be verified.
+- Never remove explicit `workspace_id` isolation.
+- Never mark migration complete from schema creation alone.
 - Never silently drop candidates that collide on email, phone or resume fingerprint; merge or surface the conflict.
-- Never use the free web-service filesystem as the final source of truth for production candidate data.
+- Never treat the free web-service filesystem as the final production source of truth.
