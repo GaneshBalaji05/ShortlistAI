@@ -1,20 +1,21 @@
 (() => {
   const $ = id => document.getElementById(id);
-  const esc = value => String(value ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[m]));
+  const esc = value => String(value ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const pad = value => String(value).padStart(2, '0');
+
   let candidates = [];
   let interviews = [];
+  let editingInterviewId = null;
   let calendarDate = new Date();
   calendarDate = new Date(calendarDate.getFullYear(), calendarDate.getMonth(), 1);
   let selectedDateKey = dateKey(new Date());
 
   async function api(url, opt){
     const r = await fetch(url, opt);
-    const d = await r.json().catch(()=>({}));
+    const d = await r.json().catch(() => ({}));
     if(!r.ok) throw new Error(d.detail || 'Request failed');
     return d;
   }
-
-  function pad(value){ return String(value).padStart(2,'0'); }
 
   function dateKey(value){
     const d = value instanceof Date ? value : new Date(value);
@@ -28,22 +29,41 @@
     return m ? m[1] : dateKey(raw);
   }
 
+  function localDateTimeParts(value){
+    const raw = String(value || '');
+    const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+    return m ? {year:+m[1], month:+m[2], day:+m[3], hour:+m[4], minute:+m[5]} : null;
+  }
+
   function dateFromKey(key){
     const m = String(key || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
     return m ? new Date(Number(m[1]), Number(m[2])-1, Number(m[3])) : new Date();
   }
 
   function fmtDay(key){
-    const d = dateFromKey(key);
-    return d.toLocaleDateString([], {weekday:'long', month:'long', day:'numeric', year:'numeric'});
+    return dateFromKey(key).toLocaleDateString([], {weekday:'long', month:'long', day:'numeric', year:'numeric'});
   }
 
   function fmtTime(value){
+    const p = localDateTimeParts(value);
+    if(p){
+      const d = new Date(2000, 0, 1, p.hour, p.minute);
+      return d.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+    }
     if(!value) return 'Time not set';
     const d = new Date(value);
-    if(!Number.isNaN(d.getTime())) return d.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
-    const m = String(value).match(/T(\d{2}:\d{2})/);
-    return m ? m[1] : 'Time not set';
+    return Number.isNaN(d.getTime()) ? 'Time not set' : d.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+  }
+
+  function fmtWhen(value){
+    const p = localDateTimeParts(value);
+    if(p){
+      const d = new Date(p.year, p.month-1, p.day, p.hour, p.minute);
+      return d.toLocaleString([], {dateStyle:'medium', timeStyle:'short'});
+    }
+    if(!value) return 'Time not set';
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? value : d.toLocaleString([], {dateStyle:'medium', timeStyle:'short'});
   }
 
   function addModule(){
@@ -72,7 +92,7 @@
         </div>
         <div class="iv-grid">
           <div class="iv-card iv-manual-card">
-            <div class="iv-card-title"><div><h3>Schedule interview</h3><small>Manual scheduling</small></div><span class="iv-mode-pill">Manual</span></div>
+            <div class="iv-card-title"><div><h3 id="ivFormTitle">Schedule interview</h3><small id="ivFormSubtitle">Manual scheduling</small></div><span class="iv-mode-pill" id="ivModePill">Manual</span></div>
             <div class="iv-field"><label>Candidate</label><select id="ivCandidate"><option value="">Select candidate</option></select></div>
             <div class="iv-form-grid">
               <div class="iv-field"><label>Round</label><select id="ivRound"><option>L1</option><option>L2</option><option>Technical</option><option>Hiring Manager</option><option>HR</option><option>Common Discussion</option></select></div>
@@ -84,8 +104,11 @@
             </div>
             <div class="iv-field"><label>Zoom / meeting link</label><input id="ivMeeting" placeholder="https://zoom.us/j/..."/></div>
             <div class="iv-field"><label>Notes</label><textarea id="ivNotes" placeholder="Round focus, panel details, instructions..."></textarea></div>
-            <button id="ivCreate" class="btn" type="button" style="width:100%">Schedule interview</button>
-            <div class="iv-help">Tip: tap any date in the calendar to prefill this form. Zoom auto-creation can be connected later through OAuth.</div>
+            <div class="row" style="gap:8px">
+              <button id="ivCreate" class="btn" type="button" style="flex:1">Schedule interview</button>
+              <button id="ivCancelEdit" class="ghost hidden" type="button">Cancel edit</button>
+            </div>
+            <div class="iv-help">Tap a date to prefill the form. Tap an existing interview to view it, then use Edit / Reschedule if needed.</div>
           </div>
           <div class="iv-card iv-calendar-card">
             <div class="iv-calendar-head">
@@ -103,39 +126,23 @@
           </div>
         </div>
       </div>`;
-    const shortlist = $('shortlist');
-    main.insertBefore(section, shortlist || null);
 
-    $('ivCreate').onclick = createInterview;
+    main.insertBefore(section, $('shortlist') || null);
+    $('ivCreate').onclick = saveInterview;
+    $('ivCancelEdit').onclick = resetForm;
     $('ivPrevMonth').onclick = () => moveMonth(-1);
     $('ivNextMonth').onclick = () => moveMonth(1);
     $('ivToday').onclick = goToday;
     $('ivUseDate').onclick = () => setManualDate(selectedDateKey, true);
     $('ivWhen').addEventListener('change', () => {
       const key = interviewDateKey($('ivWhen').value);
-      if(key){
-        selectedDateKey = key;
-        const d = dateFromKey(key);
-        calendarDate = new Date(d.getFullYear(), d.getMonth(), 1);
-        renderCalendar();
-        renderAgenda();
-      }
+      if(!key) return;
+      selectedDateKey = key;
+      const d = dateFromKey(key);
+      calendarDate = new Date(d.getFullYear(), d.getMonth(), 1);
+      renderCalendar();
+      renderAgenda();
     });
-  }
-
-  function fmtWhen(value){
-    if(!value) return 'Time not set';
-    const d = new Date(value);
-    if(Number.isNaN(d.getTime())) return value;
-    return d.toLocaleString([], {dateStyle:'medium', timeStyle:'short'});
-  }
-
-  function setStats(){
-    const now = Date.now();
-    $('ivScheduled').textContent = interviews.filter(x=>x.status==='Scheduled').length;
-    $('ivUpcoming').textContent = interviews.filter(x=>x.status==='Scheduled' && new Date(x.scheduled_at).getTime() >= now).length;
-    $('ivCompleted').textContent = interviews.filter(x=>x.status==='Completed').length;
-    $('ivCancelled').textContent = interviews.filter(x=>x.status==='Cancelled').length;
   }
 
   function monthLabel(){
@@ -144,9 +151,7 @@
 
   function moveMonth(delta){
     calendarDate = new Date(calendarDate.getFullYear(), calendarDate.getMonth()+delta, 1);
-    selectedDateKey = dateKey(calendarDate);
     renderCalendar();
-    renderAgenda();
   }
 
   function goToday(){
@@ -174,6 +179,18 @@
     renderAgenda();
   }
 
+  function openInterviewFromCalendar(interviewId){
+    const item = interviews.find(x => String(x.id) === String(interviewId));
+    if(!item) return;
+    selectCalendarDate(interviewDateKey(item.scheduled_at), false);
+    requestAnimationFrame(() => {
+      const target = document.querySelector(`[data-agenda-id="${item.id}"]`);
+      target?.scrollIntoView({behavior:'smooth', block:'nearest'});
+      target?.classList.add('selected');
+      setTimeout(() => target?.classList.remove('selected'), 900);
+    });
+  }
+
   function interviewMap(){
     const map = new Map();
     interviews.forEach(item => {
@@ -182,19 +199,20 @@
       if(!map.has(key)) map.set(key, []);
       map.get(key).push(item);
     });
-    map.forEach(list => list.sort((a,b)=>String(a.scheduled_at).localeCompare(String(b.scheduled_at))));
+    map.forEach(list => list.sort((a,b) => String(a.scheduled_at).localeCompare(String(b.scheduled_at))));
     return map;
   }
 
   function renderCalendar(){
-    const el = $('ivCalendar'); if(!el) return;
+    const el = $('ivCalendar');
+    if(!el) return;
     $('ivCalendarLabel').textContent = monthLabel();
     const map = interviewMap();
     const today = dateKey(new Date());
     const year = calendarDate.getFullYear();
     const month = calendarDate.getMonth();
     const first = new Date(year, month, 1);
-    const gridStart = new Date(year, month, 1 - first.getDay());
+    const gridStart = new Date(year, month, 1-first.getDay());
     const cells = [];
 
     for(let i=0;i<42;i++){
@@ -208,21 +226,24 @@
       const visible = dayInterviews.slice(0,2);
       cells.push(`<div class="${classes.join(' ')}" data-date="${key}">
         <button type="button" class="iv-day-number" data-select-date="${key}" aria-label="Select ${esc(fmtDay(key))}">${d.getDate()}</button>
-        <div class="iv-day-events">${visible.map(x=>`<button type="button" class="iv-event ${String(x.status||'').toLowerCase()}" data-event-date="${key}" title="${esc(x.candidate_name)} · ${esc(x.round_name)} · ${esc(fmtTime(x.scheduled_at))}"><span>${esc(fmtTime(x.scheduled_at))}</span>${esc(x.candidate_name)}</button>`).join('')}${dayInterviews.length>2?`<button type="button" class="iv-more" data-event-date="${key}">+${dayInterviews.length-2} more</button>`:''}</div>
+        <div class="iv-day-events">${visible.map(x => `<button type="button" class="iv-event ${String(x.status||'').toLowerCase()}" data-interview-id="${x.id}" title="${esc(x.candidate_name)} · ${esc(x.round_name)} · ${esc(fmtTime(x.scheduled_at))}"><span>${esc(fmtTime(x.scheduled_at))}</span>${esc(x.candidate_name)}</button>`).join('')}${dayInterviews.length>2 ? `<button type="button" class="iv-more" data-event-date="${key}">+${dayInterviews.length-2} more</button>` : ''}</div>
       </div>`);
     }
+
     el.innerHTML = cells.join('');
     el.querySelectorAll('[data-select-date]').forEach(button => button.onclick = () => selectCalendarDate(button.dataset.selectDate, true));
+    el.querySelectorAll('[data-interview-id]').forEach(button => button.onclick = () => openInterviewFromCalendar(button.dataset.interviewId));
     el.querySelectorAll('[data-event-date]').forEach(button => button.onclick = () => selectCalendarDate(button.dataset.eventDate, false));
   }
 
   function agendaItem(x){
-    return `<div class="iv-item">
-      <div class="iv-item-head"><div><b>${esc(x.candidate_name)}</b><small>${esc(x.job_title || 'Unassigned')} • ${esc(x.round_name)} • ${fmtWhen(x.scheduled_at)}</small></div><span class="iv-pill ${String(x.status||'').toLowerCase()}">${esc(x.status)}</span></div>
-      <div class="iv-badges"><span class="iv-pill">${esc(x.interviewer_name || 'Interviewer TBD')}</span><span class="iv-pill">${esc(x.outcome || 'Pending')}</span><span class="iv-pill">${esc(x.timezone || '')}</span></div>
+    return `<div class="iv-item" data-agenda-id="${x.id}">
+      <div class="iv-item-head"><div><b>${esc(x.candidate_name)}</b><small>${esc(x.job_title || 'Unassigned')} • ${esc(x.round_name)} • ${esc(fmtWhen(x.scheduled_at))}</small></div><span class="iv-pill ${String(x.status||'').toLowerCase()}">${esc(x.status)}</span></div>
+      <div class="iv-badges"><span class="iv-pill">${esc(x.interviewer_name || 'Interviewer TBD')}</span><span class="iv-pill">${esc(x.outcome || 'Pending')}</span><span class="iv-pill">${esc(x.timezone || 'Asia/Kolkata')}</span></div>
       <div class="iv-actions">
         ${x.meeting_url ? `<a class="primary" href="${esc(x.meeting_url)}" target="_blank" rel="noopener">Join meeting</a>` : ''}
         <a href="/api/interviews/${x.id}/calendar.ics">Calendar invite</a>
+        <button data-edit="${x.id}" type="button">Edit / Reschedule</button>
         <button data-complete="${x.id}" type="button">Complete</button>
         <button data-clear="${x.id}" type="button">Mark cleared</button>
         <button data-cancel="${x.id}" type="button">Cancel</button>
@@ -231,22 +252,38 @@
   }
 
   function bindAgendaActions(el){
-    el.querySelectorAll('[data-complete]').forEach(b=>b.onclick=()=>patchInterview(b.dataset.complete,{status:'Completed'}));
-    el.querySelectorAll('[data-clear]').forEach(b=>b.onclick=()=>patchInterview(b.dataset.clear,{status:'Completed',outcome:'Cleared'}));
-    el.querySelectorAll('[data-cancel]').forEach(b=>b.onclick=()=>patchInterview(b.dataset.cancel,{status:'Cancelled'}));
+    el.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => editInterview(b.dataset.edit));
+    el.querySelectorAll('[data-complete]').forEach(b => b.onclick = () => patchInterview(b.dataset.complete, {status:'Completed'}));
+    el.querySelectorAll('[data-clear]').forEach(b => b.onclick = () => patchInterview(b.dataset.clear, {status:'Completed', outcome:'Cleared'}));
+    el.querySelectorAll('[data-cancel]').forEach(b => b.onclick = () => patchInterview(b.dataset.cancel, {status:'Cancelled'}));
   }
 
   function renderAgenda(){
-    const el = $('ivList'); if(!el) return;
-    const list = interviews.filter(x=>interviewDateKey(x.scheduled_at)===selectedDateKey);
+    const el = $('ivList');
+    if(!el) return;
+    const list = interviews.filter(x => interviewDateKey(x.scheduled_at) === selectedDateKey);
     $('ivAgendaTitle').textContent = fmtDay(selectedDateKey);
     $('ivAgendaCount').textContent = `${list.length} interview${list.length===1?'':'s'}`;
     if(!list.length){
-      el.innerHTML='<div class="iv-empty">No interviews on this date.<br><small>Tap “Use this date” or a calendar day to schedule one.</small></div>';
+      el.innerHTML = '<div class="iv-empty">No interviews on this date.<br><small>Tap “Use this date” or a calendar day to schedule one.</small></div>';
       return;
     }
     el.innerHTML = list.map(agendaItem).join('');
     bindAgendaActions(el);
+  }
+
+  function scheduledTimestamp(item){
+    const p = localDateTimeParts(item.scheduled_at);
+    if(p) return new Date(p.year, p.month-1, p.day, p.hour, p.minute).getTime();
+    return new Date(item.scheduled_at).getTime();
+  }
+
+  function setStats(){
+    const now = Date.now();
+    $('ivScheduled').textContent = interviews.filter(x => x.status === 'Scheduled').length;
+    $('ivUpcoming').textContent = interviews.filter(x => x.status === 'Scheduled' && scheduledTimestamp(x) >= now).length;
+    $('ivCompleted').textContent = interviews.filter(x => x.status === 'Completed').length;
+    $('ivCancelled').textContent = interviews.filter(x => x.status === 'Cancelled').length;
   }
 
   function renderList(){
@@ -261,19 +298,21 @@
       const sel = $('ivCandidate');
       if(sel){
         const current = sel.value;
-        sel.innerHTML = '<option value="">Select candidate</option>' + candidates.map(c=>`<option value="${c.id}">${esc(c.name)}${c.job_title?' — '+esc(c.job_title):''}</option>`).join('');
+        sel.innerHTML = '<option value="">Select candidate</option>' + candidates.map(c => `<option value="${c.id}">${esc(c.name)}${c.job_title ? ' — '+esc(c.job_title) : ''}</option>`).join('');
         if(current) sel.value = current;
       }
       renderList();
-    }catch(e){window.toast?.(e.message);}
+    }catch(e){
+      window.toast?.(e.message);
+    }
   }
 
-  async function createInterview(){
+  function formPayload(){
     const candidateId = Number($('ivCandidate').value || 0);
     const scheduledAt = $('ivWhen').value;
-    if(!candidateId){window.toast?.('Select a candidate');return;}
-    if(!scheduledAt){window.toast?.('Choose interview date and time');return;}
-    const body = {
+    if(!candidateId) throw new Error('Select a candidate');
+    if(!scheduledAt) throw new Error('Choose interview date and time');
+    return {
       candidate_id:candidateId,
       round_name:$('ivRound').value,
       duration_minutes:Number($('ivDuration').value || 45),
@@ -284,25 +323,88 @@
       meeting_url:$('ivMeeting').value,
       notes:$('ivNotes').value
     };
+  }
+
+  async function saveInterview(){
+    let body;
+    try{ body = formPayload(); }
+    catch(e){ window.toast?.(e.message); return; }
+
     try{
-      $('ivCreate').disabled=true;
-      await api('/api/interviews',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-      window.toast?.('Interview scheduled');
-      selectedDateKey = interviewDateKey(scheduledAt) || selectedDateKey;
+      $('ivCreate').disabled = true;
+      if(editingInterviewId){
+        await api(`/api/interviews/${editingInterviewId}`, {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+        window.toast?.('Interview rescheduled');
+      }else{
+        await api('/api/interviews', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+        window.toast?.('Interview scheduled');
+      }
+      selectedDateKey = interviewDateKey(body.scheduled_at) || selectedDateKey;
       const selected = dateFromKey(selectedDateKey);
       calendarDate = new Date(selected.getFullYear(), selected.getMonth(), 1);
-      $('ivInterviewer').value=$('ivEmail').value=$('ivMeeting').value=$('ivNotes').value='';
-      setManualDate(selectedDateKey, false);
+      resetForm(false);
       await loadInterviews();
-    }catch(e){window.toast?.(e.message)}finally{$('ivCreate').disabled=false;}
+    }catch(e){
+      window.toast?.(e.message);
+    }finally{
+      $('ivCreate').disabled = false;
+    }
+  }
+
+  function editInterview(id){
+    const item = interviews.find(x => String(x.id) === String(id));
+    if(!item) return;
+    editingInterviewId = item.id;
+    $('ivCandidate').value = String(item.candidate_id);
+    $('ivRound').value = item.round_name || 'L1';
+    $('ivDuration').value = String(item.duration_minutes || 45);
+    $('ivWhen').value = String(item.scheduled_at || '').slice(0,16);
+    $('ivTimezone').value = item.timezone || 'Asia/Kolkata';
+    $('ivInterviewer').value = item.interviewer_name || '';
+    $('ivEmail').value = item.interviewer_email || '';
+    $('ivMeeting').value = item.meeting_url || '';
+    $('ivNotes').value = item.notes || '';
+    $('ivFormTitle').textContent = 'Edit interview';
+    $('ivFormSubtitle').textContent = 'Update or reschedule this interview';
+    $('ivModePill').textContent = 'Editing';
+    $('ivCreate').textContent = 'Save changes';
+    $('ivCancelEdit').classList.remove('hidden');
+    selectedDateKey = interviewDateKey(item.scheduled_at) || selectedDateKey;
+    const d = dateFromKey(selectedDateKey);
+    calendarDate = new Date(d.getFullYear(), d.getMonth(), 1);
+    renderCalendar();
+    renderAgenda();
+    document.querySelector('.iv-manual-card')?.scrollIntoView({behavior:'smooth', block:'start'});
+    $('ivWhen').focus();
+  }
+
+  function resetForm(keepDate=true){
+    editingInterviewId = null;
+    $('ivCandidate').value = '';
+    $('ivRound').value = 'L1';
+    $('ivDuration').value = '45';
+    $('ivTimezone').value = 'Asia/Kolkata';
+    $('ivInterviewer').value = '';
+    $('ivEmail').value = '';
+    $('ivMeeting').value = '';
+    $('ivNotes').value = '';
+    $('ivFormTitle').textContent = 'Schedule interview';
+    $('ivFormSubtitle').textContent = 'Manual scheduling';
+    $('ivModePill').textContent = 'Manual';
+    $('ivCreate').textContent = 'Schedule interview';
+    $('ivCancelEdit').classList.add('hidden');
+    if(keepDate) setManualDate(selectedDateKey, false);
+    else $('ivWhen').value = `${selectedDateKey}T10:00`;
   }
 
   async function patchInterview(id, patch){
     try{
-      await api(`/api/interviews/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)});
+      await api(`/api/interviews/${id}`, {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify(patch)});
       window.toast?.('Interview updated');
       await loadInterviews();
-    }catch(e){window.toast?.(e.message)}
+    }catch(e){
+      window.toast?.(e.message);
+    }
   }
 
   function injectCandidateAction(candidateId){
@@ -310,14 +412,15 @@
     if(!body || body.querySelector('.iv-candidate-action')) return;
     const firstRow = body.querySelector('.row');
     const btn = document.createElement('button');
-    btn.className='ghost iv-candidate-action';
-    btn.type='button';
-    btn.textContent='Schedule interview';
-    btn.onclick=async()=>{
+    btn.className = 'ghost iv-candidate-action';
+    btn.type = 'button';
+    btn.textContent = 'Schedule interview';
+    btn.onclick = async () => {
       window.closeCandidate?.();
       window.showTab?.('interviews');
       await loadInterviews();
-      if($('ivCandidate')) $('ivCandidate').value=String(candidateId);
+      resetForm();
+      $('ivCandidate').value = String(candidateId);
       setManualDate(selectedDateKey, true);
     };
     (firstRow || body).appendChild(btn);
@@ -332,5 +435,5 @@
     };
   }
   setManualDate(selectedDateKey, false);
-  setTimeout(loadInterviews,300);
+  setTimeout(loadInterviews, 300);
 })();
