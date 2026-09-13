@@ -135,3 +135,10 @@ try:
     schedule_final_review_patch()
 except ImportError:
     pass
+
+try:
+    from auth_runtime import schedule_main_auth_patch
+
+    schedule_main_auth_patch()
+except ImportError:
+    pass
