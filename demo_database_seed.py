@@ -162,3 +162,12 @@ def seed_demo_database(db_path: str) -> None:
 
     con.commit()
     con.close()
+
+    # Real candidate records supplied by the product owner are kept out of GitHub.
+    # When enabled, a private compressed Sheet2 payload from Render environment variables
+    # is loaded into its own authenticated QA workspace after the normal database startup.
+    try:
+        from master_data_runtime import seed_master_data_from_env
+        seed_master_data_from_env(db_path)
+    except Exception as exc:
+        print(f"ShortlistAI master-data seed failed: {exc}")
