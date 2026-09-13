@@ -59,23 +59,67 @@ jobs:
       - name: Verify final review build in production
         run: |
           python - <<'PY'
+          import http.cookiejar
           import json
           import re
           import time
+          import urllib.error
           import urllib.parse
           import urllib.request
 
           ROOT = "https://shortlistai-app.onrender.com"
           EXPECTED_STAGES = ["Applied","Contacted","Interview Scheduled","L1","L2","Selected","Hired","Dropped"]
 
+          jar = http.cookiejar.CookieJar()
+          client = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+
+          def expect_anonymous_401(path):
+              request = urllib.request.Request(ROOT + path, headers={"Accept": "application/json"})
+              try:
+                  urllib.request.urlopen(request, timeout=40)
+              except urllib.error.HTTPError as exc:
+                  if exc.code != 401:
+                      raise AssertionError(f"Anonymous {path} returned HTTP {exc.code}, expected 401")
+                  return
+              raise AssertionError(f"Anonymous {path} unexpectedly succeeded")
+
+          def discover_demo_credentials():
+              with urllib.request.urlopen(ROOT + "/", timeout=40) as response:
+                  html = response.read().decode("utf-8", errors="ignore")
+              match = re.search(r"([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})\s*·\s*([A-Za-z0-9]{8,})", html)
+              if not match:
+                  raise AssertionError("Public demo-login contract is missing from the production sign-in page")
+              return match.group(1), match.group(2)
+
+          def login():
+              email, password = discover_demo_credentials()
+              payload = json.dumps({"email": email, "password": password, "remember": False}).encode("utf-8")
+              request = urllib.request.Request(
+                  ROOT + "/api/auth/login",
+                  data=payload,
+                  method="POST",
+                  headers={"Content-Type": "application/json", "Accept": "application/json"},
+              )
+              with client.open(request, timeout=40) as response:
+                  if response.status != 200:
+                      raise RuntimeError(f"Login returned HTTP {response.status}")
+                  cookie_header = "\n".join(response.headers.get_all("Set-Cookie") or [])
+                  if "shortlistai_session=" not in cookie_header or "HttpOnly" not in cookie_header or "Secure" not in cookie_header:
+                      raise AssertionError("Production login did not return the expected Secure HttpOnly session cookie")
+                  data = json.load(response)
+              if not data.get("ok") or not data.get("demo"):
+                  raise AssertionError(f"QA demo login failed: {data}")
+              if not any(cookie.name == "shortlistai_session" for cookie in jar):
+                  raise AssertionError("Session cookie was not persisted by the verification client")
+
           def get_json(path):
-              with urllib.request.urlopen(ROOT + path, timeout=40) as response:
+              with client.open(ROOT + path, timeout=40) as response:
                   if response.status != 200:
                       raise RuntimeError(f"HTTP {response.status}: {path}")
                   return json.load(response)
 
           def get_text(path):
-              with urllib.request.urlopen(ROOT + path, timeout=40) as response:
+              with client.open(ROOT + path, timeout=40) as response:
                   if response.status != 200:
                       raise RuntimeError(f"HTTP {response.status}: {path}")
                   return response.read().decode("utf-8", errors="ignore")
@@ -93,6 +137,13 @@ jobs:
 
           def has_word(text, word):
               return re.search(r"(?<![a-z0-9])" + re.escape(word.lower()) + r"(?![a-z0-9])", text) is not None
+
+          for path in ("/api/final-review/status", "/api/pipeline-v3", "/api/candidates"):
+              expect_anonymous_401(path)
+          login()
+          session = get_json("/api/auth/session")
+          if not session.get("ok") or not session.get("demo"):
+              raise AssertionError(f"Authenticated session verification failed: {session}")
 
           for attempt in range(36):
               try:
@@ -141,13 +192,20 @@ jobs:
                       raise AssertionError("Final review UI assets are not live")
 
                   print(
-                      "Production verification passed:",
+                      "Production verification passed: auth protection confirmed; authenticated demo session established;",
                       status.get("candidate_total"), "stored candidates;",
                       len(java_rows), "Java results;",
                       len(complex_rows), "complex Boolean results;",
                       "role pipeline, stable scoring, duplicate merge and 600-profile persistence probe passed."
                   )
                   break
+              except urllib.error.HTTPError as exc:
+                  if exc.code == 401:
+                      login()
+                  if attempt == 35:
+                      raise
+                  print(f"Production not ready ({attempt + 1}/36): HTTP {exc.code}")
+                  time.sleep(10)
               except Exception as exc:
                   if attempt == 35:
                       raise
