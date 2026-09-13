@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from sqlalchemy import MetaData, Table, and_, delete, insert, select, update
+from sqlalchemy import MetaData, Table, and_, delete, func, insert, select, update
 from sqlalchemy.engine import Connection, Engine
 
 
@@ -28,13 +28,31 @@ class WorkspaceRepository:
         metadata = MetaData()
         return Table(table_name, metadata, autoload_with=connection)
 
-    def list_rows(self, table_name: str, *, limit: int = 200) -> list[dict[str, Any]]:
+    def list_rows(
+        self,
+        table_name: str,
+        *,
+        limit: int = 200,
+        offset: int = 0,
+        newest_first: bool = True,
+    ) -> list[dict[str, Any]]:
         if limit < 1 or limit > 1000:
             raise ValueError("limit must be between 1 and 1000")
+        if offset < 0:
+            raise ValueError("offset must be zero or greater")
         with self.engine.connect() as connection:
             table = self._table(connection, table_name)
-            stmt = select(table).where(table.c.workspace_id == self.workspace_id).limit(limit)
+            stmt = select(table).where(table.c.workspace_id == self.workspace_id)
+            if "id" in table.c:
+                stmt = stmt.order_by(table.c.id.desc() if newest_first else table.c.id.asc())
+            stmt = stmt.offset(offset).limit(limit)
             return [dict(row) for row in connection.execute(stmt).mappings().all()]
+
+    def count_rows(self, table_name: str) -> int:
+        with self.engine.connect() as connection:
+            table = self._table(connection, table_name)
+            stmt = select(func.count()).select_from(table).where(table.c.workspace_id == self.workspace_id)
+            return int(connection.execute(stmt).scalar_one())
 
     def get_row(self, table_name: str, row_id: int) -> dict[str, Any] | None:
         with self.engine.connect() as connection:
