@@ -6,7 +6,9 @@ from pathlib import Path
 
 from sqlalchemy import create_engine, select
 
+from scripts.backup_sqlite import backup_sqlite
 from scripts.migrate_sqlite_to_postgres import migrate
+from scripts.verify_sqlite_postgres_parity import verify
 from shortlistai.db.models import Base
 from shortlistai.db.runtime import create_database_engine, is_postgres_url, normalize_database_url
 
@@ -41,6 +43,8 @@ def build_source(path: Path) -> None:
                 "workspace_id": 1,
                 "name": "Migration Candidate",
                 "email": "candidate@example.test",
+                "skills": "Python, FastAPI, Pandas",
+                "resume_text": "Python backend engineer with FastAPI and Pandas experience.",
                 "job_id": 1,
                 "stage": "Sourced",
                 "created_at": "2026-09-14T00:00:00Z",
@@ -97,16 +101,32 @@ def main() -> None:
 
     with tempfile.TemporaryDirectory() as directory:
         source_path = Path(directory) / "source.db"
+        backup_path = Path(directory) / "source.backup.db"
         build_source(source_path)
+
+        backup_manifest = backup_sqlite(source_path, backup_path)
+        assert backup_manifest["integrity"] == "ok"
+        assert backup_manifest["row_counts"]["candidates"] == 1
+        assert backup_manifest["sha256"]
+        assert Path(backup_manifest["manifest"]).exists()
 
         dry_run = migrate(source_path, database_url, apply=False)
         assert dry_run["workspaces"] == 1
+        assert dry_run["users"] == 1
         assert dry_run["candidates"] == 1
         assert dry_run["candidate_identities"] == 1
 
         copied = migrate(source_path, database_url, apply=True)
         assert copied["interviews"] == 1
         assert copied["candidate_identities"] == 1
+
+        parity = verify(source_path, database_url, ["Python", "Java", "Python NOT Java"])
+        assert parity["ok"] is True
+        assert parity["row_counts"]["workspaces"] == 1
+        assert parity["row_counts"]["users"] == 1
+        assert parity["search_results"]["Python"] == [1]
+        assert parity["search_results"]["Java"] == []
+        assert parity["search_results"]["Python NOT Java"] == [1]
 
     target = create_database_engine(database_url)
     tables = Base.metadata.tables
@@ -122,7 +142,7 @@ def main() -> None:
         assert connection.execute(select(tables["notes"])).mappings().one()["candidate_id"] == 1
         assert connection.execute(select(tables["interviews"])).mappings().one()["workspace_id"] == 1
     target.dispose()
-    print("SQLite to PostgreSQL migration copy OK")
+    print("SQLite to PostgreSQL backup, migration copy, and parity verification OK")
 
 
 if __name__ == "__main__":
