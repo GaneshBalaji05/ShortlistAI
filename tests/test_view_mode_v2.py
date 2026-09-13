@@ -7,7 +7,7 @@ index = (root / "static" / "index.html").read_text(encoding="utf-8")
 
 required = [
     "const VIEW_KEY = 'shortlistai-view-mode'",
-    "id='frViewModeControl'",
+    "control.id='frViewModeControl'",
     'data-view="mobile"',
     'data-view="desktop"',
     "force-mobile",
