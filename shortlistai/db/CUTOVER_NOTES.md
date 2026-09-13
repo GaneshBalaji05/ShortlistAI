@@ -1,0 +1,1 @@
+Production cutover is intentionally disabled at this stage. The presence of PostgreSQL schema/migration code does not switch the running application away from SQLite. A Render DATABASE_URL must not be attached until the repository/data-access migration and production smoke-test plan are complete.
