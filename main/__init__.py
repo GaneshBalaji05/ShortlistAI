@@ -13,6 +13,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+from fastapi import HTTPException
 from fastapi.responses import HTMLResponse
 from demo_database_seed import seed_demo_database
 
@@ -172,6 +173,42 @@ def dashboard_v2():
         "candidates": candidates,
         "recent_activity": recent,
     }
+
+
+@app.patch("/api/candidates/{candidate_id}/interview-status")
+def update_interview_status(candidate_id: int, payload: dict):
+    """Update L1/L2 workflow state without forcing the candidate's ATS stage."""
+    allowed = {"Not Started", "Pending Scheduling", "Scheduled", "Cleared", "Rejected", "Not Applicable"}
+    l1 = str(payload.get("l1_status") or "").strip()
+    l2 = str(payload.get("l2_status") or "").strip()
+    if l1 not in allowed or l2 not in allowed:
+        raise HTTPException(status_code=400, detail="Invalid L1/L2 status")
+
+    con = legacy.db()
+    row = con.execute("SELECT stage,profile_details FROM candidates WHERE id=?", (candidate_id,)).fetchone()
+    if not row:
+        con.close()
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    details = _safe_json(row["profile_details"])
+    details["l1_status"] = l1
+    details["l2_status"] = l2
+    if l2 == "Cleared":
+        details["interview_level"] = "L2 Cleared"
+    elif l1 == "Cleared":
+        details["interview_level"] = "L1 Cleared"
+    elif l1 in {"Pending Scheduling", "Scheduled"}:
+        details["interview_level"] = "L1 Pending"
+    else:
+        details["interview_level"] = l1
+
+    con.execute(
+        "UPDATE candidates SET profile_details=?,updated_at=datetime('now') WHERE id=?",
+        (json.dumps(details), candidate_id),
+    )
+    con.commit()
+    con.close()
+    return {"candidate_id": candidate_id, "l1_status": l1, "l2_status": l2}
 
 
 @app.get("/", response_class=HTMLResponse)
