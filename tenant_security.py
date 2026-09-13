@@ -68,9 +68,7 @@ def ensure_schema(force: bool = False) -> None:
                 con.execute("CREATE INDEX IF NOT EXISTS idx_candidates_workspace_job ON candidates(workspace_id,job_id)")
             for table in ("notes", "activity_log", "interviews"):
                 if _table(con, table) and _table(con, "candidates"):
-                    con.execute(
-                        f"UPDATE {table} SET workspace_id=(SELECT c.workspace_id FROM candidates c WHERE c.id={table}.candidate_id) WHERE workspace_id IS NULL"
-                    )
+                    con.execute(f"UPDATE {table} SET workspace_id=(SELECT c.workspace_id FROM candidates c WHERE c.id={table}.candidate_id) WHERE workspace_id IS NULL")
                     con.execute(f"UPDATE {table} SET workspace_id=? WHERE workspace_id IS NULL", (demo_workspace,))
                     con.execute(f"CREATE INDEX IF NOT EXISTS idx_{table}_workspace ON {table}(workspace_id)")
             con.execute("CREATE TABLE IF NOT EXISTS security_migrations(name TEXT PRIMARY KEY,applied_at TEXT NOT NULL)")
@@ -143,8 +141,10 @@ def _split_csv(text: str) -> list[str]:
 def _reference(con: sqlite3.Connection, table: str, value, wid: int) -> None:
     if value in (None, ""):
         return
-    try: value = int(value)
-    except (TypeError, ValueError): raise HTTPException(400, f"Invalid {table[:-1]} reference")
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        raise HTTPException(400, f"Invalid {table[:-1]} reference")
     row = sqlite3.Connection.execute(con, f"SELECT 1 FROM {table} WHERE id=? AND workspace_id=?", (value, wid)).fetchone()
     if row is None:
         raise HTTPException(404, f"{table[:-1].title()} not found in this workspace")
@@ -158,32 +158,41 @@ def _validate(con: sqlite3.Connection, sql: str, params, wid: int) -> None:
     if m:
         cols = [x.strip().lower() for x in _split_csv(m.group(2))]
         data = dict(zip(cols, values))
-        if m.group(1).lower() in {"candidates", "interviews"} and "job_id" in data: _reference(con, "jobs", data["job_id"], wid)
-        if m.group(1).lower() in {"notes", "activity_log", "interviews"} and "candidate_id" in data: _reference(con, "candidates", data["candidate_id"], wid)
+        if m.group(1).lower() in {"candidates", "interviews"} and "job_id" in data:
+            _reference(con, "jobs", data["job_id"], wid)
+        if m.group(1).lower() in {"notes", "activity_log", "interviews"} and "candidate_id" in data:
+            _reference(con, "candidates", data["candidate_id"], wid)
         return
     m = re.match(r"(?is)^\s*UPDATE\s+(candidates|interviews|notes|activity_log)\s+SET\s+(.*?)(?:\s+WHERE\b|$)", sql)
-    if not m: return
+    if not m:
+        return
     pos = 0
     for assignment in _split_csv(m.group(2)):
         n = assignment.count("?")
         cm = re.match(r"(?i)^\s*([a-z_][a-z0-9_]*)\s*=", assignment)
         col = cm.group(1).lower() if cm else ""
         if n == 1 and pos < len(values):
-            if col == "job_id" and m.group(1).lower() in {"candidates", "interviews"}: _reference(con, "jobs", values[pos], wid)
-            if col == "candidate_id" and m.group(1).lower() in {"notes", "activity_log", "interviews"}: _reference(con, "candidates", values[pos], wid)
+            if col == "job_id" and m.group(1).lower() in {"candidates", "interviews"}:
+                _reference(con, "jobs", values[pos], wid)
+            if col == "candidate_id" and m.group(1).lower() in {"notes", "activity_log", "interviews"}:
+                _reference(con, "candidates", values[pos], wid)
         pos += n
 
 
 class TenantCursor(sqlite3.Cursor):
     def execute(self, sql, parameters=()):
-        wid = int(self.connection.workspace_id); _validate(self.connection, sql, parameters, wid)
+        wid = int(self.connection.workspace_id)
+        _validate(self.connection, sql, parameters, wid)
         sql, parameters = _rewrite(sql, parameters, wid)
         return super().execute(sql, parameters)
 
 
 class TenantConnection(sqlite3.Connection):
     workspace_id: int
-    def cursor(self, factory=None): return super().cursor(factory or TenantCursor)
+
+    def cursor(self, factory=None):
+        return super().cursor(factory or TenantCursor)
+
     def execute(self, sql, parameters=(), /):
         _validate(self, sql, parameters, int(self.workspace_id))
         sql, parameters = _rewrite(sql, parameters, int(self.workspace_id))
@@ -191,23 +200,34 @@ class TenantConnection(sqlite3.Connection):
 
 
 def workspace_db() -> sqlite3.Connection:
-    wid = current_workspace(); ensure_schema()
+    value = _workspace.get()
+    if value is None:
+        return _raw()
+    wid = int(value)
+    ensure_schema()
     con = sqlite3.connect(_auth().DB_PATH, factory=TenantConnection)
-    con.workspace_id = wid; con.row_factory = sqlite3.Row
+    con.workspace_id = wid
+    con.row_factory = sqlite3.Row
     con.create_function("current_workspace", 0, lambda: wid)
     return con
 
 
 def _session(raw: str):
-    if not raw: return None
+    if not raw:
+        return None
     con = _raw()
     try:
-        row = con.execute("""SELECT s.expires_at,u.*,w.name workspace_name FROM auth_sessions s JOIN users u ON u.id=s.user_id LEFT JOIN workspaces w ON w.id=u.workspace_id WHERE s.token_hash=?""", (hashlib.sha256(raw.encode()).hexdigest(),)).fetchone()
-        if not row: return None
+        token_hash = hashlib.sha256(raw.encode()).hexdigest()
+        row = con.execute("""SELECT s.expires_at,u.*,w.name workspace_name FROM auth_sessions s JOIN users u ON u.id=s.user_id LEFT JOIN workspaces w ON w.id=u.workspace_id WHERE s.token_hash=?""", (token_hash,)).fetchone()
+        if not row:
+            return None
         if datetime.fromisoformat(row["expires_at"]) <= datetime.utcnow():
-            con.execute("DELETE FROM auth_sessions WHERE token_hash=?", (hashlib.sha256(raw.encode()).hexdigest(),)); con.commit(); return None
+            con.execute("DELETE FROM auth_sessions WHERE token_hash=?", (token_hash,))
+            con.commit()
+            return None
         return row
-    finally: con.close()
+    finally:
+        con.close()
 
 
 def _protected(path: str) -> bool:
@@ -215,26 +235,37 @@ def _protected(path: str) -> bool:
 
 
 class SessionTenantMiddleware:
-    def __init__(self, app): self.app = app
+    def __init__(self, app):
+        self.app = app
+
     async def __call__(self, scope, receive, send):
         if scope.get("type") != "http" or not _protected(scope.get("path") or "/"):
             return await self.app(scope, receive, send)
-        request = Request(scope, receive=receive); row = _session(request.cookies.get(SESSION_COOKIE, ""))
+        ensure_schema()
+        request = Request(scope, receive=receive)
+        row = _session(request.cookies.get(SESSION_COOKIE, ""))
         if row is None:
-            response = RedirectResponse("/", status_code=303) if scope.get("path") == "/app" else JSONResponse({"detail":"Authentication required"}, status_code=401)
+            response = RedirectResponse("/", status_code=303) if scope.get("path") == "/app" else JSONResponse({"detail": "Authentication required"}, status_code=401)
             return await response(scope, receive, send)
-        ensure_schema(); wt = _workspace.set(int(row["workspace_id"])); ut = _user.set(int(row["id"]))
-        try: return await self.app(scope, receive, send)
-        finally: _workspace.reset(wt); _user.reset(ut)
+        wt = _workspace.set(int(row["workspace_id"]))
+        ut = _user.set(int(row["id"]))
+        try:
+            return await self.app(scope, receive, send)
+        finally:
+            _workspace.reset(wt)
+            _user.reset(ut)
 
 
 def install(app) -> None:
     try:
         import main
         legacy = getattr(main, "legacy", None)
-        if legacy is not None: legacy.db = workspace_db
-    except Exception: pass
-    if getattr(app.state, "shortlistai_tenant_security", False): return
+        if legacy is not None:
+            legacy.db = workspace_db
+    except Exception:
+        pass
+    if getattr(app.state, "shortlistai_tenant_security", False):
+        return
     app.user_middleware.insert(0, Middleware(SessionTenantMiddleware))
     app.middleware_stack = app.build_middleware_stack()
     app.state.shortlistai_tenant_security = True
