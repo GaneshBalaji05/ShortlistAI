@@ -1,6 +1,6 @@
 (() => {
   const KEY = 'shortlistai-login-view';
-  const UI_VERSION = 'login-v8';
+  const UI_VERSION = 'login-v9';
   const REFRESH_KEY = 'shortlistai-login-refresh-version';
   const mq = window.matchMedia('(max-width:900px)');
   const iconDesktop = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>';
@@ -61,8 +61,6 @@
 
   async function recoverStaleLoginPage() {
     if (location.pathname !== '/') return false;
-    // The current login UI includes Forgot password. If it is missing, this page
-    // came from an older installed-app/browser cache.
     if (document.getElementById('forgotPassword')) {
       sessionStorage.setItem(REFRESH_KEY, UI_VERSION);
       return false;
@@ -101,7 +99,7 @@
   function loadLoginFetchRecovery() {
     if (document.querySelector('script[data-login-fetch-recovery]')) return;
     const script = document.createElement('script');
-    script.src = '/static/login-fetch-fix.js?v=2';
+    script.src = '/static/login-fetch-fix.js?v=3';
     script.dataset.loginFetchRecovery = '1';
     script.defer = true;
     document.body.appendChild(script);
