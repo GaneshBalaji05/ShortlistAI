@@ -8,19 +8,41 @@ SOURCE_NAME = "Test Data - ShortlistAI_results.xlsx"
 RESUME_NAME = "Ganesh_S_Resume (2)"
 
 
+def _workspace_column(con: sqlite3.Connection) -> bool:
+    return "workspace_id" in {row[1] for row in con.execute("PRAGMA table_info(candidates)")}
+
+
+def _demo_workspace_id(con: sqlite3.Connection) -> int:
+    from auth_runtime import _ensure_auth_schema, _ensure_demo_account
+
+    _ensure_auth_schema()
+    _, workspace_id = _ensure_demo_account(con)
+    con.commit()
+    return workspace_id
+
+
 def seed_test_candidate(db_path: str) -> None:
-    """Keep the uploaded ShortlistAI_results.xlsx row available as safe test data.
+    """Keep the uploaded ShortlistAI_results.xlsx row available as safe demo test data.
 
     The row is stored in the normal candidates table and mapped to the Sheet2
     master tracker structure through profile_details. Missing Sheet2 fields are
-    deliberately left blank rather than guessed.
+    deliberately left blank rather than guessed. When workspace isolation is
+    present, this seed is confined to the dedicated ShortlistAI Demo workspace.
     """
     con = sqlite3.connect(db_path)
     con.row_factory = sqlite3.Row
-    existing = con.execute(
-        "SELECT id FROM candidates WHERE source=? AND resume_filename=? LIMIT 1",
-        (SOURCE_NAME, RESUME_NAME),
-    ).fetchone()
+    scoped = _workspace_column(con)
+    workspace_id = _demo_workspace_id(con) if scoped else None
+    if scoped:
+        existing = con.execute(
+            "SELECT id FROM candidates WHERE source=? AND resume_filename=? AND workspace_id=? LIMIT 1",
+            (SOURCE_NAME, RESUME_NAME, workspace_id),
+        ).fetchone()
+    else:
+        existing = con.execute(
+            "SELECT id FROM candidates WHERE source=? AND resume_filename=? LIMIT 1",
+            (SOURCE_NAME, RESUME_NAME),
+        ).fetchone()
     if existing:
         con.close()
         return
@@ -76,33 +98,39 @@ def seed_test_candidate(db_path: str) -> None:
         "remarks": "Imported for testing from ShortlistAI_results.xlsx. Required Years: 2; Semantic Similarity: 18.2%; Recent Evidence: 0%. Missing Sheet2 fields intentionally left blank.",
     }
 
-    con.execute(
-        """INSERT INTO candidates(
-            name,email,phone,experience,skills,resume_text,resume_filename,source,
+    columns = """name,email,phone,experience,skills,resume_text,resume_filename,source,
             notice_period,current_ctc,expected_ctc,job_id,stage,ai_score,rating,
-            ai_details,profile_details,created_at,updated_at
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (
-            RESUME_NAME,
-            "",
-            "",
-            None,
-            "",
-            "",
-            RESUME_NAME,
-            SOURCE_NAME,
-            "",
-            "",
-            "",
-            None,
-            "Sourced",
-            30.2,
-            "Weak",
-            json.dumps(ai_details),
-            json.dumps(profile_details),
-            now,
-            now,
-        ),
+            ai_details,profile_details,created_at,updated_at"""
+    values = (
+        RESUME_NAME,
+        "",
+        "",
+        None,
+        "",
+        "",
+        RESUME_NAME,
+        SOURCE_NAME,
+        "",
+        "",
+        "",
+        None,
+        "Sourced",
+        30.2,
+        "Weak",
+        json.dumps(ai_details),
+        json.dumps(profile_details),
+        now,
+        now,
     )
+    if scoped:
+        con.execute(
+            f"INSERT INTO candidates(workspace_id,{columns}) VALUES({','.join(['?'] * 20)})",
+            (workspace_id, *values),
+        )
+    else:
+        con.execute(
+            f"INSERT INTO candidates({columns}) VALUES({','.join(['?'] * 19)})",
+            values,
+        )
     con.commit()
     con.close()
