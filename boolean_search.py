@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 import re
+import sys
+import threading
+import time
 from dataclasses import dataclass
-from typing import Any, Iterable, List, Sequence
+from typing import Any, Iterable, List, Optional, Sequence
 
 
 class BooleanSearchError(ValueError):
@@ -179,3 +182,68 @@ def matches_boolean(query: str, candidate: dict[str, Any]) -> bool:
     if ast is None:
         return True
     return _eval(ast, candidate_search_text(candidate))
+
+
+def install_candidate_search_route(app, original_list_candidates, http_exception_cls) -> None:
+    """Replace only GET /api/candidates with Boolean-aware q filtering."""
+    state = getattr(app, "state", None)
+    if state is not None and getattr(state, "_shortlistai_boolean_search_installed", False):
+        return
+
+    app.router.routes = [
+        route
+        for route in app.router.routes
+        if not (
+            getattr(route, "path", None) == "/api/candidates"
+            and "GET" in (getattr(route, "methods", set()) or set())
+        )
+    ]
+
+    @app.get("/api/candidates")
+    def boolean_list_candidates(
+        job_id: Optional[int] = None,
+        stage: Optional[str] = None,
+        q: Optional[str] = None,
+        talent_pool: Optional[str] = None,
+        min_experience: Optional[float] = None,
+        max_experience: Optional[float] = None,
+        location: Optional[str] = None,
+        notice_period: Optional[str] = None,
+    ):
+        rows = original_list_candidates(
+            job_id=job_id,
+            stage=stage,
+            q=None,
+            talent_pool=talent_pool,
+            min_experience=min_experience,
+            max_experience=max_experience,
+            location=location,
+            notice_period=notice_period,
+        )
+        if not q or not q.strip():
+            return rows
+        try:
+            return [row for row in rows if matches_boolean(q, row)]
+        except BooleanSearchError as exc:
+            raise http_exception_cls(status_code=400, detail=str(exc)) from exc
+
+    if state is not None:
+        state._shortlistai_boolean_search_installed = True
+
+
+def schedule_main_candidate_search_patch(module_name: str = "main", timeout_seconds: float = 10.0) -> None:
+    """Install the Boolean route after main.py finishes defining its routes."""
+    def worker() -> None:
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            module = sys.modules.get(module_name)
+            if module is not None and all(hasattr(module, name) for name in ("app", "list_candidates", "HTTPException")):
+                try:
+                    install_candidate_search_route(module.app, module.list_candidates, module.HTTPException)
+                except Exception as exc:
+                    print(f"ShortlistAI Boolean search patch failed: {exc}", file=sys.stderr)
+                return
+            time.sleep(0.01)
+        print("ShortlistAI Boolean search patch timed out waiting for main module.", file=sys.stderr)
+
+    threading.Thread(target=worker, name="shortlistai-boolean-search", daemon=True).start()

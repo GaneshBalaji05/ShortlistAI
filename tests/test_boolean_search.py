@@ -1,6 +1,13 @@
 import unittest
 
-from boolean_search import BooleanSearchError, matches_boolean, parse_boolean_query
+from fastapi import FastAPI, HTTPException
+
+from boolean_search import (
+    BooleanSearchError,
+    install_candidate_search_route,
+    matches_boolean,
+    parse_boolean_query,
+)
 
 
 JAVA = {
@@ -57,6 +64,51 @@ class BooleanSearchTests(unittest.TestCase):
     def test_invalid_syntax(self):
         with self.assertRaises(BooleanSearchError):
             parse_boolean_query("Java AND (")
+
+    def test_candidate_api_route_uses_boolean_search(self):
+        app = FastAPI()
+        rows = [JAVA, PYTHON_ONLY, JAVA_WITH_PYTHON]
+
+        def original_list_candidates(
+            job_id=None,
+            stage=None,
+            q=None,
+            talent_pool=None,
+            min_experience=None,
+            max_experience=None,
+            location=None,
+            notice_period=None,
+        ):
+            return rows
+
+        @app.get("/api/candidates")
+        def old_route(q: str | None = None):
+            if not q:
+                return rows
+            return [row for row in rows if q.lower() in str(row).lower()]
+
+        install_candidate_search_route(app, original_list_candidates, HTTPException)
+        route = next(
+            route
+            for route in app.router.routes
+            if getattr(route, "path", None) == "/api/candidates"
+            and "GET" in (getattr(route, "methods", set()) or set())
+        )
+
+        java_results = route.endpoint(q="Java")
+        self.assertEqual(
+            [row["name"] for row in java_results],
+            ["Priya Menon", "Mixed Candidate"],
+        )
+
+        boolean_results = route.endpoint(
+            q='Java AND ("Spring Boot" OR Spring) NOT Python'
+        )
+        self.assertEqual([row["name"] for row in boolean_results], ["Priya Menon"])
+
+        with self.assertRaises(HTTPException) as ctx:
+            route.endpoint(q="Java AND (")
+        self.assertEqual(ctx.exception.status_code, 400)
 
 
 if __name__ == "__main__":
