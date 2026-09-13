@@ -42,6 +42,9 @@ jobs:
       - name: Repository layer regression
         run: PYTHONPATH=. python tests/test_repository_layer.py
 
+      - name: Candidate persistence and 800-ingestion regression
+        run: PYTHONPATH=. python tests/test_candidate_persistence.py
+
       - name: Backend preflight regression
         run: PYTHONPATH=. python tests/test_backend_preflight.py
 
@@ -114,6 +117,9 @@ jobs:
 
       - name: Verify auth routes on PostgreSQL
         run: PYTHONPATH=. python tests/test_auth_routes_postgres.py
+
+      - name: Verify candidate persistence and 800-ingestion on PostgreSQL
+        run: PYTHONPATH=. python tests/test_candidate_persistence.py
 
       - name: Verify SQLite backup, data copy, and search parity
         run: PYTHONPATH=. python tests/test_sqlite_to_postgres_migration.py
