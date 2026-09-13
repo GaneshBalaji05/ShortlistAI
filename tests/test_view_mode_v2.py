@@ -20,6 +20,6 @@ for marker in required:
 
 assert 'id="viewModeToggle"' in index, "legacy mount point missing"
 assert "legacy.hidden=true" in js, "legacy one-way toggle should be hidden by v2 controller"
-assert "shortlistai-v6" in sw, "installed app cache version was not bumped"
+assert "shortlistai-v7" in sw, "installed app cache version was not bumped to v7"
 
 print("view mode v2 regression passed")

@@ -1,0 +1,40 @@
+name: Login view icon checks
+
+on:
+  push:
+    branches:
+      - fix/login-view-icon
+      - main
+    paths:
+      - "static/login-view-icon.js"
+      - "static/sw.js"
+      - ".github/workflows/login-view-icon-check.yml"
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: JavaScript syntax
+        run: |
+          node --check static/login-view-icon.js
+          node --check static/sw.js
+      - name: Login view icon regression
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          const icon=fs.readFileSync('static/login-view-icon.js','utf8');
+          const sw=fs.readFileSync('static/sw.js','utf8');
+          for(const marker of ['viewToggle','shortlistai-login-view','visualViewport','Desktop View','Mobile View']){
+            if(!icon.includes(marker)) throw new Error(`missing icon marker: ${marker}`);
+          }
+          for(const marker of ['shortlistai-v7','/static/login-view-icon.js?v=1','injectLoginViewIcon']){
+            if(!sw.includes(marker)) throw new Error(`missing service worker marker: ${marker}`);
+          }
+          console.log('Login view icon regression passed');
+          NODE
