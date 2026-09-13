@@ -157,6 +157,13 @@ def test_corruption_is_reported_without_exposing_contact_values() -> None:
                 ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (3, 1, "", " ALPHA@example.test ", "123", 2, "JS", "JavaScript", "Bad", 2, "Mystery", None, None, json.dumps({"linkedin_id": "not a linkedin url/value!!"})),
             )
+            con.execute(
+                """INSERT INTO candidates(
+                    id,workspace_id,name,email,phone,experience,skills,resume_text,source,job_id,stage,
+                    created_at,updated_at,profile_details
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (4, 1, "Malformed Email", "not-an-email", "", 1, "Python", "Python", "Bad", 1, "Applied", "2026-09-14", "2026-09-14", "{}"),
+            )
             con.execute("INSERT INTO notes VALUES(?,?,?,?,?)", (2, 1, 999, "orphan", "2026-09-14"))
             con.execute("INSERT INTO activity_log VALUES(?,?,?,?,?,?)", (2, 2, 1, "bad workspace", "", "2026-09-14"))
             con.execute(
@@ -182,8 +189,10 @@ def test_corruption_is_reported_without_exposing_contact_values() -> None:
             "activity_log_candidate_cross_workspace",
             "orphan_interviews",
             "interview_orphan_job",
+            "candidate_identity_owner_mismatch",
         }
         assert expected_critical.issubset(set(report["critical"])), report
+        assert report["checks"]["malformed_candidate_email"]["count"] == 1
         assert report["checks"]["malformed_candidate_phone"]["count"] == 1
         assert report["checks"]["malformed_candidate_linkedin"]["count"] == 1
         assert report["checks"]["candidate_missing_name"]["count"] == 1
@@ -191,6 +200,7 @@ def test_corruption_is_reported_without_exposing_contact_values() -> None:
         assert report["checks"]["invalid_pipeline_stage"]["count"] == 1
         rendered = json.dumps(report).lower()
         assert "alpha@example.test" not in rendered
+        assert "not-an-email" not in rendered
         assert "not a linkedin" not in rendered
         assert before == after, "audit must never repair or delete questionable data automatically"
 
