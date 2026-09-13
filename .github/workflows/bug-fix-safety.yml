@@ -32,6 +32,9 @@ jobs:
         run: |
           node --check static/login-fetch-fix.js
           node --check static/login-view-icon.js
+          node --check static/final-review.js
+          node --check static/dashboard-v2.js
+          node --check static/interviews-v1.js
           node --check static/sw.js
 
       - name: Import core runtime modules
@@ -47,8 +50,18 @@ jobs:
           print('core runtime imports OK')
           PY
 
-      - name: Run password recovery regression
-        run: PYTHONPATH=. python tests/test_auth_recovery.py
+      - name: Run full regression suite
+        env:
+          SHORTLISTAI_EXPOSE_RESET_LINK: 'false'
+        run: |
+          set -euo pipefail
+          for test in tests/test_*.py; do
+            db="/tmp/$(basename "$test" .py).db"
+            rm -f "$db"
+            echo "==> $test"
+            SQLITE_PATH="$db" PYTHONPATH=. python "$test"
+            rm -f "$db"
+          done
 
       - name: Verify security-sensitive production defaults
         run: |
