@@ -35,7 +35,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Verify Boolean search against stored production candidates
+      - name: Verify Boolean search against stored production candidate evidence
         run: |
           python - <<'PY'
           import json
@@ -45,6 +45,7 @@ jobs:
           import urllib.request
 
           BASE = "https://shortlistai-app.onrender.com/api/candidates"
+          EXCLUDED_PROFILE_KEYS = {"screening_status","interview_level","l1_status","l2_status","role_name","recruiter_name","source_history"}
 
           def get_candidates(q=None):
               url = BASE
@@ -55,38 +56,36 @@ jobs:
                       raise RuntimeError(f"HTTP {response.status} for {url}")
                   return json.load(response)
 
-          def flat(value):
-              if value is None:
-                  return ""
-              if isinstance(value, dict):
-                  return " ".join(str(k) + " " + flat(v) for k, v in value.items())
-              if isinstance(value, list):
-                  return " ".join(flat(v) for v in value)
-              return str(value)
+          def evidence_text(row):
+              profile = dict(row.get("profile_details") or {})
+              for key in EXCLUDED_PROFILE_KEYS:
+                  profile.pop(key, None)
+              values = [
+                  row.get("name"), row.get("email"), row.get("phone"), row.get("experience"),
+                  row.get("skills"), row.get("resume_text"), row.get("resume_filename"),
+                  row.get("notice_period"), row.get("current_ctc"), row.get("expected_ctc"), profile,
+              ]
+              return " ".join(json.dumps(v, ensure_ascii=False) if isinstance(v,(dict,list)) else str(v or "") for v in values).lower()
 
           def has_word(text, word):
-              return re.search(r"(?<![a-z0-9])" + re.escape(word.lower()) + r"(?![a-z0-9])", text.lower()) is not None
+              return re.search(r"(?<![a-z0-9])" + re.escape(word.lower()) + r"(?![a-z0-9])", text) is not None
 
-          last_error = None
           for attempt in range(30):
               try:
                   all_rows = get_candidates()
                   java_rows = get_candidates("Java")
                   complex_rows = get_candidates('Java AND ("Spring Boot" OR Spring) NOT Python')
 
-                  false_java = [
-                      row for row in java_rows
-                      if not has_word(flat(row), "java")
-                  ]
+                  false_java = [row for row in java_rows if not has_word(evidence_text(row), "java")]
                   if false_java:
                       raise AssertionError(
-                          "Java search returned rows without genuine Java evidence: "
+                          "Java search returned rows without genuine candidate Java evidence: "
                           + ", ".join(str(r.get("name") or r.get("id")) for r in false_java[:10])
                       )
 
                   python_only = [
                       row for row in all_rows
-                      if has_word(flat(row), "python") and not has_word(flat(row), "java")
+                      if has_word(evidence_text(row), "python") and not has_word(evidence_text(row), "java")
                   ]
                   java_ids = {row.get("id") for row in java_rows}
                   leaked_python = [row for row in python_only if row.get("id") in java_ids]
@@ -97,18 +96,17 @@ jobs:
                       )
 
                   for row in complex_rows:
-                      text = flat(row)
+                      text = evidence_text(row)
                       if not has_word(text, "java"):
                           raise AssertionError(f"Complex query returned non-Java row: {row.get('name')}")
-                      if not ("spring boot" in text.lower() or has_word(text, "spring")):
+                      if not ("spring boot" in text or has_word(text, "spring")):
                           raise AssertionError(f"Complex query returned row without Spring evidence: {row.get('name')}")
                       if has_word(text, "python"):
                           raise AssertionError(f"Complex query returned Python row despite NOT Python: {row.get('name')}")
 
-                  print(f"Production verification passed: {len(all_rows)} stored candidates; {len(java_rows)} Java results; {len(complex_rows)} complex-query results; {len(python_only)} Python-only profiles checked.")
+                  print(f"Production verification passed: {len(all_rows)} stored candidates; {len(java_rows)} genuine Java results; {len(complex_rows)} complex-query results; {len(python_only)} Python-only profiles checked.")
                   break
               except Exception as exc:
-                  last_error = exc
                   if attempt == 29:
                       raise
                   print(f"Production not ready yet ({attempt + 1}/30): {exc}")
