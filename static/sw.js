@@ -1,6 +1,7 @@
-const CACHE = 'shortlistai-v3';
+const CACHE = 'shortlistai-v4';
 const APP_SHELL = [
   '/static/manifest.webmanifest',
+  '/static/icons/shortlistai-app-no-white.svg',
   '/static/icons/icon-192.png',
   '/static/icons/icon-512.png'
 ];
