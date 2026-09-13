@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping
 
-from sqlalchemy import and_, delete, func, insert, select, update
+from sqlalchemy import and_, delete, func, insert, or_, select, update
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.exc import IntegrityError
 
@@ -11,7 +11,6 @@ from shortlistai.db.models import Base
 
 
 TENANT_TABLES = {"jobs", "candidates", "notes", "activity_log", "interviews"}
-ID_TABLES = TENANT_TABLES
 
 
 class RepositoryConflict(RuntimeError):
@@ -31,12 +30,7 @@ def _table(table_name: str):
 
 @dataclass(frozen=True)
 class AuthRepository:
-    """Database-agnostic auth persistence using the SQLAlchemy schema.
-
-    Password hashing, cookies, and email delivery stay in the auth service layer. This
-    repository owns only persistence and works against both the SQLite rollback store and
-    PostgreSQL.
-    """
+    """Database-agnostic persistence for auth, users and workspaces."""
 
     engine: Engine
 
@@ -62,6 +56,59 @@ class AuthRepository:
                 select(workspaces).where(workspaces.c.id == int(workspace_id))
             ).mappings().first()
             return dict(row) if row else None
+
+    def get_workspace_by_name(self, name: str) -> dict[str, Any] | None:
+        workspaces = _table("workspaces")
+        with self.engine.connect() as connection:
+            row = connection.execute(
+                select(workspaces)
+                .where(workspaces.c.name == str(name))
+                .order_by(workspaces.c.id)
+            ).mappings().first()
+            return dict(row) if row else None
+
+    def create_workspace(self, *, name: str, created_at: str) -> int:
+        workspaces = _table("workspaces")
+        with self.engine.begin() as connection:
+            return int(
+                connection.execute(
+                    insert(workspaces).values(name=name, created_at=created_at).returning(workspaces.c.id)
+                ).scalar_one()
+            )
+
+    def create_user(
+        self,
+        *,
+        workspace_id: int,
+        full_name: str,
+        email: str,
+        password_hash: str,
+        password_salt: str,
+        role: str,
+        created_at: str,
+        last_login_at: str | None,
+    ) -> int:
+        users = _table("users")
+        try:
+            with self.engine.begin() as connection:
+                return int(
+                    connection.execute(
+                        insert(users)
+                        .values(
+                            workspace_id=int(workspace_id),
+                            full_name=full_name,
+                            email=email,
+                            password_hash=password_hash,
+                            password_salt=password_salt,
+                            role=role,
+                            created_at=created_at,
+                            last_login_at=last_login_at,
+                        )
+                        .returning(users.c.id)
+                    ).scalar_one()
+                )
+        except IntegrityError as exc:
+            raise RepositoryConflict("User insert violated a database constraint") from exc
 
     def create_workspace_user(
         self,
@@ -173,10 +220,9 @@ class AuthRepository:
     def delete_sessions_for_user(self, user_id: int) -> int:
         sessions = _table("auth_sessions")
         with self.engine.begin() as connection:
-            return int(
-                connection.execute(delete(sessions).where(sessions.c.user_id == int(user_id))).rowcount
-                or 0
-            )
+            return int(connection.execute(
+                delete(sessions).where(sessions.c.user_id == int(user_id))
+            ).rowcount or 0)
 
     def replace_password_reset(
         self,
@@ -188,7 +234,11 @@ class AuthRepository:
     ) -> None:
         tokens = _table("password_reset_tokens")
         with self.engine.begin() as connection:
-            connection.execute(delete(tokens).where(tokens.c.user_id == int(user_id)))
+            connection.execute(
+                delete(tokens).where(
+                    or_(tokens.c.user_id == int(user_id), tokens.c.expires_at <= created_at)
+                )
+            )
             connection.execute(
                 insert(tokens).values(
                     token_hash=token_hash,
@@ -246,13 +296,7 @@ class AuthRepository:
 
 @dataclass(frozen=True)
 class WorkspaceRepository:
-    """Explicit workspace-scoped data-access boundary for ATS persistence.
-
-    Every tenant-owned read and mutation contains ``workspace_id`` in the query. Foreign
-    references are also checked against the same workspace before a write is accepted, so
-    an ID from another workspace cannot be attached accidentally even when the database FK
-    itself only references the numeric primary key.
-    """
+    """Explicit workspace-scoped data-access boundary for ATS persistence."""
 
     engine: Engine
     workspace_id: int
@@ -471,17 +515,11 @@ class WorkspaceRepository:
             ).mappings().all()
             return [dict(row) for row in job_rows], [dict(row) for row in candidate_rows]
 
-    def list_interviews(
-        self,
-        *,
-        candidate_id: int | None = None,
-        job_id: int | None = None,
-        status: str = "",
-    ) -> list[dict[str, Any]]:
+    def _interview_select(self):
         interviews = _table("interviews")
         candidates = _table("candidates")
         jobs = _table("jobs")
-        stmt = (
+        return (
             select(
                 interviews,
                 candidates.c.name.label("candidate_name"),
@@ -502,6 +540,16 @@ class WorkspaceRepository:
             )
             .where(interviews.c.workspace_id == self.workspace_id)
         )
+
+    def list_interviews(
+        self,
+        *,
+        candidate_id: int | None = None,
+        job_id: int | None = None,
+        status: str = "",
+    ) -> list[dict[str, Any]]:
+        interviews = _table("interviews")
+        stmt = self._interview_select()
         if candidate_id is not None:
             stmt = stmt.where(interviews.c.candidate_id == int(candidate_id))
         if job_id is not None:
@@ -513,8 +561,8 @@ class WorkspaceRepository:
             return [dict(row) for row in connection.execute(stmt).mappings().all()]
 
     def get_interview(self, interview_id: int) -> dict[str, Any] | None:
-        rows = self.list_interviews()
-        for row in rows:
-            if int(row["id"]) == int(interview_id):
-                return row
-        return None
+        interviews = _table("interviews")
+        stmt = self._interview_select().where(interviews.c.id == int(interview_id))
+        with self.engine.connect() as connection:
+            row = connection.execute(stmt).mappings().first()
+            return dict(row) if row else None
