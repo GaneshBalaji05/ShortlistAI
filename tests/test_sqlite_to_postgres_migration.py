@@ -8,7 +8,7 @@ from sqlalchemy import create_engine, select
 
 from scripts.migrate_sqlite_to_postgres import migrate
 from shortlistai.db.models import Base
-from shortlistai.db.runtime import create_database_engine
+from shortlistai.db.runtime import create_database_engine, is_postgres_url, normalize_database_url
 
 
 def build_source(path: Path) -> None:
@@ -80,7 +80,11 @@ def build_source(path: Path) -> None:
 
 
 def main() -> None:
-    database_url = os.environ["DATABASE_URL"]
+    database_url = normalize_database_url(os.getenv("DATABASE_URL", ""))
+    if not is_postgres_url(database_url):
+        print("SKIP: SQLite to PostgreSQL migration copy requires DATABASE_URL")
+        return
+
     with tempfile.TemporaryDirectory() as directory:
         source_path = Path(directory) / "source.db"
         build_source(source_path)
