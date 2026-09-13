@@ -1,10 +1,26 @@
 (() => {
+  'use strict';
+
   const KEY = 'shortlistai-login-view';
-  const UI_VERSION = 'login-v9';
-  const REFRESH_KEY = 'shortlistai-login-refresh-version';
   const mq = window.matchMedia('(max-width:900px)');
   const iconDesktop = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>';
   const iconMobile = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M10 5h4M11 19h2"/></svg>';
+
+  function storedMode() {
+    try {
+      return localStorage.getItem(KEY) || 'mobile';
+    } catch (_) {
+      return 'mobile';
+    }
+  }
+
+  function setStoredMode(value) {
+    try {
+      localStorage.setItem(KEY, value);
+    } catch (_) {
+      // View preference is optional and must never affect authentication.
+    }
+  }
 
   function placeButton(btn) {
     if (!mq.matches) {
@@ -23,7 +39,8 @@
   function render() {
     const btn = document.getElementById('viewToggle');
     if (!btn) return;
-    const desktop = mq.matches && localStorage.getItem(KEY) === 'desktop';
+
+    const desktop = mq.matches && storedMode() === 'desktop';
     document.body.classList.toggle('force-desktop', desktop);
     btn.hidden = false;
     btn.setAttribute('aria-label', desktop ? 'Switch to Mobile View' : 'Switch to Desktop View');
@@ -53,37 +70,13 @@
   }
 
   function toggle() {
-    const desktop = mq.matches && localStorage.getItem(KEY) === 'desktop';
-    localStorage.setItem(KEY, desktop ? 'mobile' : 'desktop');
+    const desktop = mq.matches && storedMode() === 'desktop';
+    setStoredMode(desktop ? 'mobile' : 'desktop');
     render();
     window.scrollTo({top: 0, left: 0, behavior: 'smooth'});
   }
 
-  async function recoverStaleLoginPage() {
-    if (location.pathname !== '/') return false;
-    if (document.getElementById('forgotPassword')) {
-      sessionStorage.setItem(REFRESH_KEY, UI_VERSION);
-      return false;
-    }
-    if (sessionStorage.getItem(REFRESH_KEY) === UI_VERSION) return false;
-    sessionStorage.setItem(REFRESH_KEY, UI_VERSION);
-    try {
-      if ('caches' in window) {
-        const keys = await caches.keys();
-        await Promise.all(keys.filter(k => k.startsWith('shortlistai-')).map(k => caches.delete(k)));
-      }
-      if ('serviceWorker' in navigator) {
-        const reg = await navigator.serviceWorker.getRegistration('/');
-        if (reg) await reg.update();
-      }
-    } catch (_) {}
-    const url = new URL(location.href);
-    url.searchParams.set('_ui', UI_VERSION);
-    location.replace(url.toString());
-    return true;
-  }
-
-  function mount() {
+  function start() {
     const btn = document.getElementById('viewToggle');
     if (!btn) return;
     btn.onclick = toggle;
@@ -93,24 +86,6 @@
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', () => placeButton(btn), {passive:true});
       window.visualViewport.addEventListener('scroll', () => placeButton(btn), {passive:true});
-    }
-  }
-
-  function loadLoginFetchRecovery() {
-    if (document.querySelector('script[data-login-fetch-recovery]')) return;
-    const script = document.createElement('script');
-    script.src = '/static/login-fetch-fix.js?v=3';
-    script.dataset.loginFetchRecovery = '1';
-    script.defer = true;
-    document.body.appendChild(script);
-  }
-
-  async function start() {
-    if (await recoverStaleLoginPage()) return;
-    mount();
-    loadLoginFetchRecovery();
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistration('/').then(reg => reg?.update()).catch(() => {});
     }
   }
 
