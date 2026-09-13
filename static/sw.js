@@ -1,9 +1,9 @@
-const CACHE = 'shortlistai-v8';
+const CACHE = 'shortlistai-v9';
 const APP_SHELL = [
   '/static/manifest.webmanifest',
   '/static/icons/icon-192-v3.png',
   '/static/icons/icon-512-v3.png',
-  '/static/login-view-icon.js?v=2'
+  '/static/login-view-icon.js?v=3'
 ];
 
 self.addEventListener('install', event => {
@@ -28,7 +28,7 @@ async function injectLoginViewIcon(response) {
   if (!type.includes('text/html')) return response;
   let html = await response.text();
   if (!html.includes('/static/login-view-icon.js')) {
-    html = html.replace('</body>', '<script src="/static/login-view-icon.js?v=2"></script>\n</body>');
+    html = html.replace('</body>', '<script src="/static/login-view-icon.js?v=3"></script>\n</body>');
   }
   const headers = new Headers(response.headers);
   headers.delete('content-length');
@@ -49,23 +49,23 @@ self.addEventListener('fetch', event => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  // Never cache live ATS/API data.
+  // Authentication, ATS data and live actions must always reach the server.
   if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/analyze') || url.pathname.startsWith('/export')) {
     return;
   }
 
-  // Always fetch navigations from the network. This is especially important for
-  // the login page because authentication UI changes must reach installed PWAs.
+  // Always use the network for page navigations. Installed PWAs must never
+  // re-open a stale login/app document after auth or deployment changes.
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request, { cache: 'no-store' })
+      fetch(request, { cache: 'no-store', credentials: 'same-origin' })
         .then(response => url.pathname === '/' ? injectLoginViewIcon(response) : response)
         .catch(() => caches.match(request) || new Response('ShortlistAI is temporarily offline.', { status: 503 }))
     );
     return;
   }
 
-  // Static assets: network first, cached fallback.
+  // Static assets are network-first with a cached fallback.
   event.respondWith(
     fetch(request, { cache: 'no-cache' })
       .then(response => {
