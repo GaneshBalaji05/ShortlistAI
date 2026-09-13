@@ -26,6 +26,24 @@ PYTHON_ONLY = {
     "talent_pools": ["Python", "Cloud", "AWS"],
 }
 
+METADATA_JAVA_ONLY = {
+    "name": "Metadata Leak Candidate",
+    "skills": "python, django, react, javascript",
+    "resume_text": "Python and Django engineer building React and JavaScript applications.",
+    "job_title": "Java Developer",
+    "stage": "Applied",
+    "talent_pools": ["Java"],
+    "profile_details": {
+        "current_designation": "Python Developer",
+        "role_name": "Java Developer",
+        "l1_status": "Pending Scheduling",
+    },
+    "ai_evaluation": {
+        "missing_skills": ["java", "spring boot"],
+        "risks": ["Missing Java and Spring Boot"],
+    },
+}
+
 JAVA_WITH_PYTHON = {
     "name": "Mixed Candidate",
     "skills": "java, spring boot, python",
@@ -39,6 +57,10 @@ class BooleanSearchTests(unittest.TestCase):
         self.assertTrue(matches_boolean("Java", JAVA))
         self.assertFalse(matches_boolean("Java", PYTHON_ONLY))
 
+    def test_java_does_not_match_unrelated_system_metadata(self):
+        self.assertFalse(matches_boolean("Java", METADATA_JAVA_ONLY))
+        self.assertTrue(matches_boolean("Python AND Django", METADATA_JAVA_ONLY))
+
     def test_quoted_phrase(self):
         self.assertTrue(matches_boolean('"Spring Boot"', JAVA))
         self.assertFalse(matches_boolean('"Spring Boot"', PYTHON_ONLY))
@@ -47,6 +69,7 @@ class BooleanSearchTests(unittest.TestCase):
         query = 'Java AND ("Spring Boot" OR Spring) NOT Python'
         self.assertTrue(matches_boolean(query, JAVA))
         self.assertFalse(matches_boolean(query, PYTHON_ONLY))
+        self.assertFalse(matches_boolean(query, METADATA_JAVA_ONLY))
         self.assertFalse(matches_boolean(query, JAVA_WITH_PYTHON))
 
     def test_or(self):
@@ -57,7 +80,7 @@ class BooleanSearchTests(unittest.TestCase):
         self.assertTrue(matches_boolean("Java Spring", JAVA))
         self.assertFalse(matches_boolean("Java Spring", PYTHON_ONLY))
 
-    def test_all_fields_are_searchable(self):
+    def test_candidate_owned_profile_fields_are_searchable(self):
         candidate = {"profile_details": {"preferred_location": "Chennai"}, "skills": "Java"}
         self.assertTrue(matches_boolean("Chennai AND Java", candidate))
 
@@ -67,7 +90,7 @@ class BooleanSearchTests(unittest.TestCase):
 
     def test_candidate_api_route_uses_boolean_search(self):
         app = FastAPI()
-        rows = [JAVA, PYTHON_ONLY, JAVA_WITH_PYTHON]
+        rows = [JAVA, PYTHON_ONLY, METADATA_JAVA_ONLY, JAVA_WITH_PYTHON]
 
         def original_list_candidates(
             job_id=None,
