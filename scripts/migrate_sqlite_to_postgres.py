@@ -17,6 +17,8 @@ TABLE_ORDER = (
     "jobs",
     "candidates",
     "candidate_identities",
+    "ingestion_batches",
+    "ingestion_items",
     "notes",
     "activity_log",
     "interviews",
@@ -26,11 +28,23 @@ WORKSPACE_TABLES = (
     "jobs",
     "candidates",
     "candidate_identities",
+    "ingestion_batches",
+    "ingestion_items",
     "notes",
     "activity_log",
     "interviews",
 )
-SEQUENCE_TABLES = ("workspaces", "users", "jobs", "candidates", "notes", "activity_log", "interviews")
+SEQUENCE_TABLES = (
+    "workspaces",
+    "users",
+    "jobs",
+    "candidates",
+    "ingestion_batches",
+    "ingestion_items",
+    "notes",
+    "activity_log",
+    "interviews",
+)
 
 
 def source_tables(connection: sqlite3.Connection) -> set[str]:
