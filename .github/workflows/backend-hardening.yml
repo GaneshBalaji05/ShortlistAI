@@ -68,7 +68,7 @@ jobs:
     if: github.ref == 'refs/heads/backend-postgres-migration' || github.ref == 'refs/heads/engineering-stabilization-v2' || github.event_name == 'pull_request'
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_USER: shortlistai
           POSTGRES_PASSWORD: shortlistai
@@ -83,6 +83,7 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg://shortlistai:shortlistai@127.0.0.1:5432/shortlistai_test
       SQLITE_PATH: /tmp/shortlistai-postgres-schema.db
+      SHORTLISTAI_EXPOSE_RESET_LINK: 'false'
 
     steps:
       - name: Checkout
@@ -97,7 +98,7 @@ jobs:
         run: pip install -r requirements-dev.txt
 
       - name: Compile migration sources
-        run: python -m compileall -q shortlistai alembic scripts tests
+        run: python -m compileall -q shortlistai alembic scripts tests auth_runtime.py tenant_security.py
 
       - name: Upgrade PostgreSQL schema
         run: alembic upgrade head
@@ -111,7 +112,10 @@ jobs:
       - name: Verify repository auth and tenant boundaries
         run: PYTHONPATH=. python tests/test_repository_layer.py
 
-      - name: Verify SQLite data copy
+      - name: Verify auth routes on PostgreSQL
+        run: PYTHONPATH=. python tests/test_auth_routes_postgres.py
+
+      - name: Verify SQLite backup, data copy, and search parity
         run: PYTHONPATH=. python tests/test_sqlite_to_postgres_migration.py
 
       - name: Verify reversible migration
