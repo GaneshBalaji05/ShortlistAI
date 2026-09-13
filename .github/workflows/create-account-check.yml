@@ -1,0 +1,25 @@
+name: Create Account check
+
+on:
+  push:
+    branches: ["feature/create-account", "main"]
+  pull_request:
+    paths:
+      - "auth_runtime.py"
+      - "shortlistai_talent.py"
+      - "static/login.html"
+      - "tests/test_create_account.py"
+      - ".github/workflows/create-account-check.yml"
+
+jobs:
+  auth-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run Create Account tests
+        run: PYTHONPATH=. python tests/test_create_account.py
