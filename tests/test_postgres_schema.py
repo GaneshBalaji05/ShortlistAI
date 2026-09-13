@@ -18,9 +18,18 @@ EXPECTED_TABLES = {
     "activity_log",
     "interviews",
     "security_migrations",
+    "master_data_seed_log",
     "alembic_version",
 }
-WORKSPACE_TABLES = {"jobs", "candidates", "candidate_identities", "notes", "activity_log", "interviews"}
+WORKSPACE_TABLES = {
+    "jobs",
+    "candidates",
+    "candidate_identities",
+    "notes",
+    "activity_log",
+    "interviews",
+    "master_data_seed_log",
+}
 REQUIRED_INDEXES = {
     "jobs": {"idx_jobs_workspace"},
     "candidates": {"idx_candidates_workspace", "idx_candidates_workspace_job"},
@@ -112,6 +121,17 @@ def main() -> None:
                     "created_at": "2026-09-14T00:00:00Z",
                 },
             )
+            connection.execute(
+                text(
+                    "INSERT INTO master_data_seed_log(workspace_id,dataset_version,payload_sha256,row_count,seeded_at) "
+                    "VALUES(:workspace_id,'ci-v1',:sha,1,:seeded_at)"
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "sha": "a" * 64,
+                    "seeded_at": "2026-09-14T00:00:00Z",
+                },
+            )
             saved = connection.execute(
                 text("SELECT workspace_id,job_id FROM candidates WHERE id=:id"),
                 {"id": candidate_id},
@@ -123,6 +143,12 @@ def main() -> None:
                 {"workspace_id": workspace_id},
             ).mappings().one()
             assert identity["candidate_id"] == candidate_id
+            seed = connection.execute(
+                text("SELECT dataset_version,row_count FROM master_data_seed_log WHERE workspace_id=:workspace_id"),
+                {"workspace_id": workspace_id},
+            ).mappings().one()
+            assert seed["dataset_version"] == "ci-v1"
+            assert seed["row_count"] == 1
         finally:
             transaction.rollback()
 
