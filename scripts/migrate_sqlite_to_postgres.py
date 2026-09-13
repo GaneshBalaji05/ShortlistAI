@@ -16,12 +16,20 @@ TABLE_ORDER = (
     "password_reset_tokens",
     "jobs",
     "candidates",
+    "candidate_identities",
     "notes",
     "activity_log",
     "interviews",
     "security_migrations",
 )
-WORKSPACE_TABLES = ("jobs", "candidates", "notes", "activity_log", "interviews")
+WORKSPACE_TABLES = (
+    "jobs",
+    "candidates",
+    "candidate_identities",
+    "notes",
+    "activity_log",
+    "interviews",
+)
 SEQUENCE_TABLES = ("workspaces", "users", "jobs", "candidates", "notes", "activity_log", "interviews")
 
 

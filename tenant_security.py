@@ -58,14 +58,31 @@ def _column(con: sqlite3.Connection, table: str, name: str, ddl: str) -> None:
         con.execute(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
 
 
+def _schema_is_current(key: str) -> bool:
+    """Do not trust only the cached DB path; legacy ATS tables can be created after auth startup."""
+    if _schema_db != key:
+        return False
+    con = _raw()
+    try:
+        for table in TABLES:
+            if not _table(con, table):
+                continue
+            cols = {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
+            if "workspace_id" not in cols:
+                return False
+        return True
+    finally:
+        con.close()
+
+
 def ensure_schema(force: bool = False) -> None:
     global _schema_db
     ar = _auth()
     key = os.path.abspath(ar.DB_PATH)
-    if not force and _schema_db == key:
+    if not force and _schema_is_current(key):
         return
     with _schema_lock:
-        if not force and _schema_db == key:
+        if not force and _schema_is_current(key):
             return
         ar._ensure_auth_schema()
         con = _raw()

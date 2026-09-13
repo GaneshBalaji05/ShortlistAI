@@ -48,6 +48,16 @@ def build_source(path: Path) -> None:
             },
         )
         connection.execute(
+            tables["candidate_identities"].insert(),
+            {
+                "workspace_id": 1,
+                "identity_type": "email",
+                "identity_value": "candidate@example.test",
+                "candidate_id": 1,
+                "created_at": "2026-09-14T00:00:00Z",
+            },
+        )
+        connection.execute(
             tables["notes"].insert(),
             {"id": 1, "workspace_id": 1, "candidate_id": 1, "note": "Migration note", "created_at": "2026-09-14T00:00:00Z"},
         )
@@ -92,9 +102,11 @@ def main() -> None:
         dry_run = migrate(source_path, database_url, apply=False)
         assert dry_run["workspaces"] == 1
         assert dry_run["candidates"] == 1
+        assert dry_run["candidate_identities"] == 1
 
         copied = migrate(source_path, database_url, apply=True)
         assert copied["interviews"] == 1
+        assert copied["candidate_identities"] == 1
 
     target = create_database_engine(database_url)
     tables = Base.metadata.tables
@@ -103,6 +115,10 @@ def main() -> None:
         assert candidate["name"] == "Migration Candidate"
         assert candidate["workspace_id"] == 1
         assert candidate["job_id"] == 1
+        identity = connection.execute(select(tables["candidate_identities"])).mappings().one()
+        assert identity["candidate_id"] == 1
+        assert identity["identity_type"] == "email"
+        assert identity["identity_value"] == "candidate@example.test"
         assert connection.execute(select(tables["notes"])).mappings().one()["candidate_id"] == 1
         assert connection.execute(select(tables["interviews"])).mappings().one()["workspace_id"] == 1
     target.dispose()
