@@ -1,0 +1,36 @@
+name: Interview calendar v2 checks
+
+on:
+  push:
+    branches:
+      - feature/interview-calendar-v2
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate interactive calendar markers
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          js = Path('static/interviews-v1.js').read_text(encoding='utf-8')
+          css = Path('static/interviews-v1.css').read_text(encoding='utf-8')
+          required_js = ['ivCalendar','ivPrevMonth','ivNextMonth','ivToday','ivUseDate','renderCalendar','renderAgenda','setManualDate']
+          required_css = ['.iv-calendar','.iv-day','.iv-event','.iv-agenda-head']
+          missing = [x for x in required_js if x not in js] + [x for x in required_css if x not in css]
+          if missing:
+              raise SystemExit(f'Missing calendar integration markers: {missing}')
+          print('calendar integration markers ok')
+          PY
+
+      - name: JavaScript syntax check
+        run: node --check static/interviews-v1.js
+
+      - name: Python syntax checks
+        run: python -m py_compile main.py main/__init__.py
