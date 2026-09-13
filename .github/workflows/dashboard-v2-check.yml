@@ -1,0 +1,30 @@
+name: Dashboard v2 checks
+
+on:
+  push:
+    branches:
+      - feature/dashboard-v2
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Python syntax checks
+        run: python -m py_compile main.py main/__init__.py demo_database_seed.py shortlistai_test_seed.py
+
+      - name: JavaScript syntax check
+        run: node --check static/dashboard-v2.js
+
+      - name: Validate PWA manifest
+        run: python -c "import json; json.load(open('static/manifest.webmanifest', encoding='utf-8')); print('manifest ok')"
