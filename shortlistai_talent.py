@@ -142,3 +142,10 @@ try:
     schedule_main_auth_patch()
 except ImportError:
     pass
+
+try:
+    from data_foundation import schedule_data_foundation_patch
+
+    schedule_data_foundation_patch()
+except ImportError:
+    pass
