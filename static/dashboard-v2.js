@@ -7,6 +7,14 @@
 
   const safe = value => String(value ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   const pct = (value, total) => total ? Math.round((value / total) * 100) : 0;
+  const STAGE_ALIASES = {
+    Sourced:'Applied', Screened:'Contacted', Interview:'Interview Scheduled',
+    Offered:'Selected', Joined:'Hired', Rejected:'Dropped'
+  };
+  const canonicalStage = stage => {
+    const value = String(stage || 'Applied');
+    return STAGE_ALIASES[value] || value;
+  };
 
   function candidateSet() {
     if (!payload) return [];
@@ -15,8 +23,8 @@
   }
 
   function metricsFor(candidates) {
-    const hired = candidates.filter(c => c.stage === 'Joined').length;
-    const dropped = candidates.filter(c => c.stage === 'Rejected').length;
+    const hired = candidates.filter(c => canonicalStage(c.stage) === 'Hired').length;
+    const dropped = candidates.filter(c => canonicalStage(c.stage) === 'Dropped').length;
     return {
       profiles_sourced: candidates.length,
       in_pipeline: Math.max(0, candidates.length - hired - dropped),
@@ -24,13 +32,13 @@
       l2_cleared: candidates.filter(c => c.l2_status === 'Cleared').length,
       hired,
       dropped,
-      yet_to_schedule_l1: candidates.filter(c => c.l1_status === 'Pending Scheduling' && !['Joined','Rejected'].includes(c.stage)).length,
-      yet_to_schedule_l2: candidates.filter(c => c.l1_status === 'Cleared' && c.l2_status === 'Pending Scheduling' && !['Joined','Rejected'].includes(c.stage)).length,
+      yet_to_schedule_l1: candidates.filter(c => c.l1_status === 'Pending Scheduling' && !['Hired','Dropped'].includes(canonicalStage(c.stage))).length,
+      yet_to_schedule_l2: candidates.filter(c => c.l1_status === 'Cleared' && c.l2_status === 'Pending Scheduling' && !['Hired','Dropped'].includes(canonicalStage(c.stage))).length,
       strong: candidates.filter(c => c.rating === 'Strong').length,
       average: candidates.filter(c => c.rating === 'Average').length,
       weak: candidates.filter(c => c.rating === 'Weak').length,
       ai_screened: candidates.filter(c => c.rating).length,
-      offered: candidates.filter(c => ['Offered','Joined'].includes(c.stage)).length,
+      offered: candidates.filter(c => ['Selected','Hired'].includes(canonicalStage(c.stage))).length,
     };
   }
 
@@ -90,15 +98,15 @@
     const all = candidateSet();
     const map = {
       sourced: c => true,
-      pipeline: c => !['Joined','Rejected'].includes(c.stage),
+      pipeline: c => !['Hired','Dropped'].includes(canonicalStage(c.stage)),
       l1: c => c.l1_status === 'Cleared',
       l2: c => c.l2_status === 'Cleared',
-      hired: c => c.stage === 'Joined',
-      dropped: c => c.stage === 'Rejected',
-      scheduleL1: c => c.l1_status === 'Pending Scheduling' && !['Joined','Rejected'].includes(c.stage),
-      scheduleL2: c => c.l1_status === 'Cleared' && c.l2_status === 'Pending Scheduling' && !['Joined','Rejected'].includes(c.stage),
+      hired: c => canonicalStage(c.stage) === 'Hired',
+      dropped: c => canonicalStage(c.stage) === 'Dropped',
+      scheduleL1: c => c.l1_status === 'Pending Scheduling' && !['Hired','Dropped'].includes(canonicalStage(c.stage)),
+      scheduleL2: c => c.l1_status === 'Cleared' && c.l2_status === 'Pending Scheduling' && !['Hired','Dropped'].includes(canonicalStage(c.stage)),
       screened: c => Boolean(c.rating),
-      offered: c => ['Offered','Joined'].includes(c.stage),
+      offered: c => ['Selected','Hired'].includes(canonicalStage(c.stage)),
       strong: c => c.rating === 'Strong',
       average: c => c.rating === 'Average',
       weak: c => c.rating === 'Weak',

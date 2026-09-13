@@ -91,26 +91,46 @@ def _safe_json(value: str | None) -> dict:
         return {}
 
 
+DASHBOARD_STAGE_ALIASES = {
+    "Sourced": "Applied",
+    "Screened": "Contacted",
+    "Interview": "Interview Scheduled",
+    "Offered": "Selected",
+    "Joined": "Hired",
+    "Rejected": "Dropped",
+}
+DASHBOARD_STAGES = {
+    "Applied", "Contacted", "Interview Scheduled", "L1", "L2", "Selected", "Hired", "Dropped"
+}
+
+
+def _canonical_stage(stage: str | None) -> str:
+    value = str(stage or "Applied").strip()
+    return DASHBOARD_STAGE_ALIASES.get(value, value if value in DASHBOARD_STAGES else "Applied")
+
+
 def _workflow_status(stage: str, details: dict) -> tuple[str, str]:
     """Return L1/L2 status, preferring recruiter-entered metadata with safe fallbacks."""
     l1 = str(details.get("l1_status") or "").strip()
     l2 = str(details.get("l2_status") or "").strip()
-    stage = stage or "Sourced"
+    stage = _canonical_stage(stage)
 
     if not l1:
-        if stage in {"Interview", "Offered", "Joined"}:
+        if stage == "Interview Scheduled":
+            l1 = "Scheduled"
+        elif stage in {"L1", "L2", "Selected", "Hired"}:
             l1 = "Cleared"
-        elif stage == "Rejected":
+        elif stage == "Dropped":
             l1 = "Not Applicable"
         else:
             l1 = "Pending Scheduling"
 
     if not l2:
-        if stage in {"Offered", "Joined"}:
+        if stage in {"L2", "Selected", "Hired"}:
             l2 = "Cleared"
-        elif stage == "Interview" and l1 == "Cleared":
+        elif stage == "L1" and l1 == "Cleared":
             l2 = "Pending Scheduling"
-        elif stage == "Rejected":
+        elif stage == "Dropped":
             l2 = "Not Applicable"
         else:
             l2 = "Not Started"
@@ -119,8 +139,9 @@ def _workflow_status(stage: str, details: dict) -> tuple[str, str]:
 
 def _summary(candidates: list[dict]) -> dict:
     total = len(candidates)
-    hired = sum(c["stage"] == "Joined" for c in candidates)
-    dropped = sum(c["stage"] == "Rejected" for c in candidates)
+    stages = [_canonical_stage(c.get("stage")) for c in candidates]
+    hired = sum(stage == "Hired" for stage in stages)
+    dropped = sum(stage == "Dropped" for stage in stages)
     return {
         "profiles_sourced": total,
         "in_pipeline": max(0, total - hired - dropped),
@@ -128,17 +149,24 @@ def _summary(candidates: list[dict]) -> dict:
         "l2_cleared": sum(c["l2_status"] == "Cleared" for c in candidates),
         "hired": hired,
         "dropped": dropped,
-        "yet_to_schedule_l1": sum(c["l1_status"] == "Pending Scheduling" and c["stage"] not in {"Joined", "Rejected"} for c in candidates),
-        "yet_to_schedule_l2": sum(c["l1_status"] == "Cleared" and c["l2_status"] == "Pending Scheduling" and c["stage"] not in {"Joined", "Rejected"} for c in candidates),
+        "yet_to_schedule_l1": sum(
+            c["l1_status"] == "Pending Scheduling" and _canonical_stage(c.get("stage")) not in {"Hired", "Dropped"}
+            for c in candidates
+        ),
+        "yet_to_schedule_l2": sum(
+            c["l1_status"] == "Cleared"
+            and c["l2_status"] == "Pending Scheduling"
+            and _canonical_stage(c.get("stage")) not in {"Hired", "Dropped"}
+            for c in candidates
+        ),
         "ai_distribution": {
             "Strong": sum(c["rating"] == "Strong" for c in candidates),
             "Average": sum(c["rating"] == "Average" for c in candidates),
             "Weak": sum(c["rating"] == "Weak" for c in candidates),
         },
-        "stage_distribution": dict(Counter(c["stage"] for c in candidates)),
+        "stage_distribution": dict(Counter(stages)),
         "source_distribution": dict(Counter(c["source"] or "Unknown" for c in candidates)),
     }
-
 
 @app.get("/api/dashboard-v2")
 def dashboard_v2():
@@ -166,7 +194,7 @@ def dashboard_v2():
             "email": row["email"] or "",
             "job_id": row["job_id"],
             "job_title": row["job_title"] or "Unassigned",
-            "stage": row["stage"] or "Sourced",
+            "stage": _canonical_stage(row["stage"]),
             "ai_score": row["ai_score"],
             "rating": row["rating"] or "",
             "source": row["source"] or "Unknown",
