@@ -1,0 +1,40 @@
+name: Career page v1 checks
+
+on:
+  push:
+    branches:
+      - feature/career-page-v1
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate career page markup and script
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          html = Path('static/careers.html').read_text(encoding='utf-8')
+          required = ['/api/jobs','/api/profile/parse','/api/candidates','Career Page','Submit application']
+          missing = [x for x in required if x not in html]
+          if missing:
+              raise SystemExit(f'Missing career page integration markers: {missing}')
+          scripts = re.findall(r'<script>(.*?)</script>', html, re.S)
+          if not scripts:
+              raise SystemExit('No inline script found')
+          Path('/tmp/careers.js').write_text('\n'.join(scripts), encoding='utf-8')
+          print('career page markup ok')
+          PY
+          node --check /tmp/careers.js
+
+      - name: Python syntax checks
+        run: python -m py_compile main.py main/__init__.py demo_database_seed.py shortlistai_test_seed.py
+
+      - name: Validate PWA manifest
+        run: python -c "import json; json.load(open('static/manifest.webmanifest', encoding='utf-8')); print('manifest ok')"
