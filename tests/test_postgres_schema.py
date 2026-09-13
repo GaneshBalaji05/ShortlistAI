@@ -31,7 +31,10 @@ REQUIRED_INDEXES = {
 
 def main() -> None:
     url = resolve_database_url()
-    assert is_postgres_url(url), f"PostgreSQL test requires DATABASE_URL, got {url!r}"
+    if not is_postgres_url(url):
+        print("SKIP: PostgreSQL schema contract requires DATABASE_URL")
+        return
+
     engine = create_database_engine(url)
     inspector = inspect(engine)
 
