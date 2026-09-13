@@ -24,7 +24,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r requirements.txt
-      - run: python -m unittest tests.test_boolean_search
+      - run: PYTHONPATH=. python tests/test_boolean_search.py
 
   production:
     if: github.event_name == 'push'
