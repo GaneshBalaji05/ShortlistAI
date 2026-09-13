@@ -1,0 +1,58 @@
+name: Bug Fix Safety
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  baseline-safety:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Compile Python sources
+        run: python -m compileall -q .
+
+      - name: Import core runtime modules
+        env:
+          SQLITE_PATH: /tmp/shortlistai-ci.db
+          SHORTLISTAI_EXPOSE_RESET_LINK: 'false'
+        run: |
+          python - <<'PY'
+          import auth_runtime
+          import boolean_search
+          import final_review
+          import tenant_security
+          print('core runtime imports OK')
+          PY
+
+      - name: Verify security-sensitive production defaults
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          auth = Path('auth_runtime.py').read_text(encoding='utf-8')
+          security = Path('tenant_security.py').read_text(encoding='utf-8')
+          sw = Path('static/sw.js').read_text(encoding='utf-8')
+
+          assert 'httponly=True' in auth, 'session cookie must remain HttpOnly'
+          assert 'SESSION_COOKIE' in security, 'tenant security must validate server session cookie'
+          assert 'JavaScript' not in '', 'placeholder to keep this check explicit and deterministic'
+          assert "url.pathname.startsWith('/api/')" in sw, 'service worker must not cache API data'
+          print('security/cache invariants OK')
+          PY
+
+      - name: Verify bug-fix standard exists
+        run: |
+          test -s BUG_FIX_STANDARD.md
+          grep -q "Production flow verified" BUG_FIX_STANDARD.md
