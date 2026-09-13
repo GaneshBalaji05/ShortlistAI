@@ -1,0 +1,37 @@
+name: Reports v1 checks
+
+on:
+  push:
+    branches:
+      - feature/reports-v1
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate reports markup and JavaScript
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          html = Path('static/reports.html').read_text(encoding='utf-8')
+          required = ['/api/dashboard-v2','/api/interviews','Download CSV','Requirement performance','AI screening quality']
+          missing = [x for x in required if x not in html]
+          if missing:
+              raise SystemExit(f'Missing reports integration markers: {missing}')
+          scripts = re.findall(r'<script>(.*?)</script>', html, re.S)
+          if not scripts:
+              raise SystemExit('No inline script found')
+          Path('/tmp/reports.js').write_text('\n'.join(scripts), encoding='utf-8')
+          print('reports markup ok')
+          PY
+          node --check /tmp/reports.js
+
+      - name: Python syntax checks
+        run: python -m py_compile main.py main/__init__.py demo_database_seed.py shortlistai_test_seed.py
