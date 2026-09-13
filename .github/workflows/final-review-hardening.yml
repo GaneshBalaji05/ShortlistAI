@@ -1,0 +1,156 @@
+name: Final review hardening checks
+
+on:
+  push:
+    branches:
+      - feature/final-review-hardening
+      - main
+    paths:
+      - "final_review.py"
+      - "boolean_search.py"
+      - "shortlistai_talent.py"
+      - "demo_database_seed.py"
+      - "static/final-review.js"
+      - "static/theme-v2.js"
+      - "tests/test_boolean_search.py"
+      - "tests/test_final_review.py"
+      - ".github/workflows/final-review-hardening.yml"
+  pull_request:
+    branches: [main]
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Python syntax
+        run: python -m py_compile main.py main/__init__.py final_review.py boolean_search.py shortlistai_talent.py demo_database_seed.py
+      - name: Boolean search regression
+        run: PYTHONPATH=. python tests/test_boolean_search.py
+      - name: Final review regression
+        run: PYTHONPATH=. python tests/test_final_review.py
+      - name: JavaScript syntax
+        run: |
+          node --check static/final-review.js
+          node --check static/theme-v2.js
+          node --check static/dashboard-v2.js
+          node --check static/interviews-v1.js
+      - name: Installed-app view switcher regression
+        run: |
+          grep -q 'id="viewModeToggle"' static/index.html
+          grep -q 'shortlistai-view-mode' static/index.html
+          grep -q 'Desktop View' static/index.html
+          grep -q 'final-review.js' static/theme-v2.js
+      - name: No seeded dummy assessment scores
+        run: |
+          grep -q 'ai_score=NULL,rating=NULL,ai_details=NULL' demo_database_seed.py
+          ! grep -q '"score": score' demo_database_seed.py
+
+  production:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: regression
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify final review build in production
+        run: |
+          python - <<'PY'
+          import json
+          import re
+          import time
+          import urllib.parse
+          import urllib.request
+
+          ROOT = "https://shortlistai-app.onrender.com"
+          EXPECTED_STAGES = ["Applied","Contacted","Interview Scheduled","L1","L2","Selected","Hired","Dropped"]
+
+          def get_json(path):
+              with urllib.request.urlopen(ROOT + path, timeout=40) as response:
+                  if response.status != 200:
+                      raise RuntimeError(f"HTTP {response.status}: {path}")
+                  return json.load(response)
+
+          def get_text(path):
+              with urllib.request.urlopen(ROOT + path, timeout=40) as response:
+                  if response.status != 200:
+                      raise RuntimeError(f"HTTP {response.status}: {path}")
+                  return response.read().decode("utf-8", errors="ignore")
+
+          def evidence_text(row):
+              profile = dict(row.get("profile_details") or {})
+              for key in ["screening_status","interview_level","l1_status","l2_status","role_name","recruiter_name","source_history"]:
+                  profile.pop(key, None)
+              fields = [
+                  row.get("name"),row.get("email"),row.get("phone"),row.get("experience"),
+                  row.get("skills"),row.get("resume_text"),row.get("resume_filename"),
+                  row.get("notice_period"),row.get("current_ctc"),row.get("expected_ctc"),profile,
+              ]
+              return " ".join(json.dumps(v, ensure_ascii=False) if isinstance(v,(dict,list)) else str(v or "") for v in fields).lower()
+
+          def has_word(text, word):
+              return re.search(r"(?<![a-z0-9])" + re.escape(word.lower()) + r"(?![a-z0-9])", text) is not None
+
+          for attempt in range(36):
+              try:
+                  status = get_json("/api/final-review/status")
+                  probe = status.get("probe") or {}
+                  if status.get("pipeline_stages") != EXPECTED_STAGES:
+                      raise AssertionError(f"Pipeline stages not ready: {status.get('pipeline_stages')}")
+                  if status.get("scoring_version") != "stable-v2":
+                      raise AssertionError("Stable scoring v2 is not live")
+                  if status.get("duplicate_policy") != "merge":
+                      raise AssertionError("Duplicate merge policy is not live")
+                  if status.get("bulk_ui_limit") != 800:
+                      raise AssertionError("800-profile bulk limit is not live")
+                  if not status.get("view_switcher"):
+                      raise AssertionError("Mobile/Desktop switcher is not live")
+                  if not probe.get("passed") or probe.get("bulk_count") != 600:
+                      raise AssertionError(f"Production 600-profile persistence probe failed: {probe}")
+                  if not probe.get("bulk_searchable") or not probe.get("scoring_stable") or not probe.get("duplicate_merge") or not probe.get("boolean_metadata_isolation"):
+                      raise AssertionError(f"Production regression probe incomplete: {probe}")
+
+                  pipeline = get_json("/api/pipeline-v3")
+                  if pipeline.get("stages") != EXPECTED_STAGES:
+                      raise AssertionError("Role pipeline API does not expose the finalized stages")
+                  if not pipeline.get("jobs"):
+                      raise AssertionError("Role selector has no jobs")
+                  if set(pipeline.get("counts", {}).keys()) != set(EXPECTED_STAGES):
+                      raise AssertionError("Pipeline counts are not stage-complete")
+
+                  java_rows = get_json("/api/candidates?" + urllib.parse.urlencode({"q":"Java"}))
+                  complex_rows = get_json("/api/candidates?" + urllib.parse.urlencode({"q":'Java AND ("Spring Boot" OR Spring)'}))
+                  for row in java_rows:
+                      text = evidence_text(row)
+                      if not has_word(text, "java"):
+                          raise AssertionError(f"Java search leaked metadata-only row: {row.get('name')}")
+                  for row in complex_rows:
+                      text = evidence_text(row)
+                      if not has_word(text, "java") or not ("spring boot" in text or has_word(text,"spring")):
+                          raise AssertionError(f"Complex Boolean search returned invalid row: {row.get('name')}")
+
+                  html = get_text("/app")
+                  final_ui = get_text("/static/final-review.js?v=1")
+                  theme = get_text("/static/theme-v2.js?v=2")
+                  if "viewModeToggle" not in html or "Desktop View" not in html or "shortlistai-view-mode" not in html:
+                      raise AssertionError("Installed-app Mobile/Desktop switcher is not present")
+                  if "final-review.js" not in theme or "PIPELINE_STAGES" not in final_ui or "BULK_LIMIT = 800" not in final_ui:
+                      raise AssertionError("Final review UI assets are not live")
+
+                  print(
+                      "Production verification passed:",
+                      status.get("candidate_total"), "stored candidates;",
+                      len(java_rows), "Java results;",
+                      len(complex_rows), "complex Boolean results;",
+                      "role pipeline, stable scoring, duplicate merge and 600-profile persistence probe passed."
+                  )
+                  break
+              except Exception as exc:
+                  if attempt == 35:
+                      raise
+                  print(f"Production not ready ({attempt + 1}/36): {exc}")
+                  time.sleep(10)
+          PY

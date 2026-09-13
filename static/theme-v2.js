@@ -41,4 +41,12 @@
   function escapeHtml(value){
     return String(value || '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   }
+
+  if (!document.querySelector('script[data-final-review]')) {
+    const script = document.createElement('script');
+    script.src = '/static/final-review.js?v=1';
+    script.dataset.finalReview = '1';
+    script.defer = true;
+    document.body.appendChild(script);
+  }
 })();

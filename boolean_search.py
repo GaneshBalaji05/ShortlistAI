@@ -132,8 +132,7 @@ def _flatten_values(value: Any) -> Iterable[str]:
     if value is None:
         return
     if isinstance(value, dict):
-        for key, item in value.items():
-            yield str(key)
+        for item in value.values():
             yield from _flatten_values(item)
         return
     if isinstance(value, (list, tuple, set)):
@@ -149,8 +148,50 @@ def _flatten_values(value: Any) -> Iterable[str]:
         yield str(value)
 
 
+# Search only candidate-owned evidence. System metadata such as talent-pool labels,
+# assigned job titles, pipeline stage, AI missing-skill output and rating is excluded
+# so a Java pool label or a JD requirement cannot make a Python/JavaScript resume
+# appear in a Java keyword search.
+SEARCHABLE_CANDIDATE_FIELDS = (
+    "name",
+    "email",
+    "phone",
+    "experience",
+    "skills",
+    "resume_text",
+    "resume_filename",
+    "notice_period",
+    "current_ctc",
+    "expected_ctc",
+)
+
+PROFILE_METADATA_EXCLUDE = {
+    "screening_status",
+    "interview_level",
+    "l1_status",
+    "l2_status",
+    "role_name",
+    "recruiter_name",
+    "source_history",
+}
+
+
+def _searchable_profile(profile: Any) -> dict:
+    if not isinstance(profile, dict):
+        return {}
+    return {
+        key: value
+        for key, value in profile.items()
+        if key not in PROFILE_METADATA_EXCLUDE
+    }
+
+
 def candidate_search_text(candidate: dict[str, Any]) -> str:
-    return "\n".join(_flatten_values(candidate)).lower()
+    parts: list[str] = []
+    for field in SEARCHABLE_CANDIDATE_FIELDS:
+        parts.extend(_flatten_values(candidate.get(field)))
+    parts.extend(_flatten_values(_searchable_profile(candidate.get("profile_details"))))
+    return "\n".join(parts).lower()
 
 
 def _term_pattern(term: str) -> re.Pattern[str]:
@@ -236,10 +277,11 @@ def schedule_main_candidate_search_patch(module_name: str = "main", timeout_seco
     def worker() -> None:
         deadline = time.monotonic() + timeout_seconds
         while time.monotonic() < deadline:
-            module = sys.modules.get(module_name)
-            if module is not None and all(hasattr(module, name) for name in ("app", "list_candidates", "HTTPException")):
+            module = sys.modules.get("shortlistai_legacy_main") or sys.modules.get(module_name)
+            target = getattr(module, "legacy", module) if module is not None else None
+            if target is not None and all(hasattr(target, name) for name in ("app", "list_candidates", "HTTPException")):
                 try:
-                    install_candidate_search_route(module.app, module.list_candidates, module.HTTPException)
+                    install_candidate_search_route(target.app, target.list_candidates, target.HTTPException)
                 except Exception as exc:
                     print(f"ShortlistAI Boolean search patch failed: {exc}", file=sys.stderr)
                 return

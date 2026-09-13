@@ -27,25 +27,28 @@ JOBS = [
     },
 ]
 
-# name, email, exp, skills, ATS stage, AI score, AI rating, job index, L1 status, L2 status
+# Fictional profiles exist only to exercise ATS workflow states. Assessment score,
+# rating and AI details are intentionally left empty: ShortlistAI must calculate
+# those from the real JD/resume scoring engine rather than seed dummy values.
+# name, email, exp, skills, ATS stage, job index, L1 status, L2 status
 CANDIDATES = [
-    ("Arjun Raman", "arjun.raman@example.test", 6.8, "python, fastapi, react, typescript, postgresql, generative ai, docker", "Screened", 88.0, "Strong", 0, "Pending Scheduling", "Not Started"),
-    ("Meera Nair", "meera.nair@example.test", 5.4, "python, django, react, javascript, aws, rest api", "Interview", 76.0, "Strong", 0, "Cleared", "Pending Scheduling"),
-    ("Karthik S", "karthik.s@example.test", 4.2, "python, flask, react, sql, docker", "Sourced", 63.0, "Average", 0, "Pending Scheduling", "Not Started"),
-    ("Priya Menon", "priya.menon@example.test", 7.1, "java, spring boot, angular, mysql", "Rejected", 41.0, "Weak", 0, "Not Applicable", "Not Applicable"),
-    ("Naveen Kumar", "naveen.kumar@example.test", 9.0, "playwright, selenium, api testing, pytest, jenkins, github actions", "Interview", 91.0, "Strong", 1, "Cleared", "Cleared"),
-    ("Divya R", "divya.r@example.test", 7.8, "selenium, cypress, api testing, automation testing, jira", "Screened", 74.0, "Average", 1, "Pending Scheduling", "Not Started"),
-    ("Rahul Iyer", "rahul.iyer@example.test", 6.5, "manual testing, jira, sql", "Sourced", 46.0, "Weak", 1, "Pending Scheduling", "Not Started"),
-    ("Sanjana V", "sanjana.v@example.test", 8.2, "product management, roadmap, analytics, agile, stakeholder management, jira", "Offered", 89.0, "Strong", 2, "Cleared", "Cleared"),
-    ("Vikram Rao", "vikram.rao@example.test", 6.0, "product management, scrum, stakeholder management, figma", "Interview", 72.0, "Average", 2, "Cleared", "Pending Scheduling"),
-    ("Ananya S", "ananya.s@example.test", 5.2, "business analysis, agile, jira, analytics", "Screened", 58.0, "Average", 2, "Pending Scheduling", "Not Started"),
-    ("Suresh B", "suresh.b@example.test", 8.5, "python, fastapi, react, agentic ai, llm, rag, langchain, aws", "Joined", 94.0, "Strong", 0, "Cleared", "Cleared"),
-    ("Lavanya P", "lavanya.p@example.test", 7.3, "playwright, pytest, api testing, ci/cd, docker", "Offered", 84.0, "Strong", 1, "Cleared", "Cleared"),
+    ("Arjun Raman", "arjun.raman@example.test", 6.8, "python, fastapi, react, typescript, postgresql, generative ai, docker", "Contacted", 0, "Pending Scheduling", "Not Started"),
+    ("Meera Nair", "meera.nair@example.test", 5.4, "python, django, react, javascript, aws, rest api", "Interview Scheduled", 0, "Cleared", "Pending Scheduling"),
+    ("Karthik S", "karthik.s@example.test", 4.2, "python, flask, react, sql, docker", "Applied", 0, "Pending Scheduling", "Not Started"),
+    ("Priya Menon", "priya.menon@example.test", 7.1, "java, spring boot, angular, mysql", "Dropped", 0, "Not Applicable", "Not Applicable"),
+    ("Naveen Kumar", "naveen.kumar@example.test", 9.0, "playwright, selenium, api testing, pytest, jenkins, github actions", "L2", 1, "Cleared", "Cleared"),
+    ("Divya R", "divya.r@example.test", 7.8, "selenium, cypress, api testing, automation testing, jira", "Contacted", 1, "Pending Scheduling", "Not Started"),
+    ("Rahul Iyer", "rahul.iyer@example.test", 6.5, "manual testing, jira, sql", "Applied", 1, "Pending Scheduling", "Not Started"),
+    ("Sanjana V", "sanjana.v@example.test", 8.2, "product management, roadmap, analytics, agile, stakeholder management, jira", "Selected", 2, "Cleared", "Cleared"),
+    ("Vikram Rao", "vikram.rao@example.test", 6.0, "product management, scrum, stakeholder management, figma", "L1", 2, "Cleared", "Pending Scheduling"),
+    ("Ananya S", "ananya.s@example.test", 5.2, "business analysis, agile, jira, analytics", "Contacted", 2, "Pending Scheduling", "Not Started"),
+    ("Suresh B", "suresh.b@example.test", 8.5, "python, fastapi, react, agentic ai, llm, rag, langchain, aws", "Hired", 0, "Cleared", "Cleared"),
+    ("Lavanya P", "lavanya.p@example.test", 7.3, "playwright, pytest, api testing, ci/cd, docker", "Selected", 1, "Cleared", "Cleared"),
 ]
 
 
 def seed_demo_database(db_path: str) -> None:
-    """Seed/refresh fictional data so dashboard, pipeline and AI states are testable."""
+    """Seed/refresh fictional ATS data without inventing AI assessment results."""
     con = sqlite3.connect(db_path)
     con.row_factory = sqlite3.Row
     now = datetime.utcnow().isoformat()
@@ -62,24 +65,7 @@ def seed_demo_database(db_path: str) -> None:
         )
         job_ids.append(int(cur.lastrowid))
 
-    for name, email, exp, skills, stage, score, rating, job_index, l1_status, l2_status in CANDIDATES:
-        matched = [s.strip() for s in skills.split(",")[:5]]
-        missing = [] if rating == "Strong" else (["generative ai"] if job_index == 0 else ["advanced automation framework design"] if job_index == 1 else ["deeper product analytics"])
-        ai_details = {
-            "score": score,
-            "rating": rating,
-            "candidate_years": exp,
-            "required_years": 4 if job_index == 0 else 7 if job_index == 1 else 5,
-            "semantic_similarity": min(96.0, score + 3),
-            "skill_coverage": score,
-            "recent_evidence": max(35.0, score - 8),
-            "matched_skills": matched,
-            "missing_skills": missing,
-            "recent_skills": matched[:3],
-            "risks": [] if rating == "Strong" else ["Validate depth in the missing requirement during screening."],
-            "screening_questions": ["Describe your most relevant recent project and what you personally owned."],
-            "test_source": DEMO_SOURCE,
-        }
+    for name, email, exp, skills, stage, job_index, l1_status, l2_status in CANDIDATES:
         profile_details = {
             "candidate_full_name": name,
             "email_id": email,
@@ -96,15 +82,16 @@ def seed_demo_database(db_path: str) -> None:
             "l2_status": l2_status,
             "role_name": JOBS[job_index]["title"],
             "recruiter_name": "Demo Recruiter",
-            "remarks": "Fictional test profile generated for ShortlistAI product validation.",
+            "remarks": "Fictional workflow profile for ShortlistAI product validation. AI assessment intentionally not pre-scored.",
         }
         resume_text = f"{name}\n{exp} years of experience\nSkills: {skills}\nRecent project aligned to {JOBS[job_index]['title']}."
 
         existing = con.execute("SELECT id FROM candidates WHERE source=? AND email=? LIMIT 1", (DEMO_SOURCE, email)).fetchone()
         if existing:
             con.execute(
-                """UPDATE candidates SET experience=?,skills=?,resume_text=?,resume_filename=?,job_id=?,stage=?,ai_score=?,rating=?,ai_details=?,profile_details=?,updated_at=? WHERE id=?""",
-                (exp, skills, resume_text, f"{name.replace(' ', '_')}_Demo.txt", job_ids[job_index], stage, score, rating, json.dumps(ai_details), json.dumps(profile_details), now, int(existing["id"])),
+                """UPDATE candidates SET experience=?,skills=?,resume_text=?,resume_filename=?,job_id=?,stage=?,
+                   ai_score=NULL,rating=NULL,ai_details=NULL,profile_details=?,updated_at=? WHERE id=?""",
+                (exp, skills, resume_text, f"{name.replace(' ', '_')}_Demo.txt", job_ids[job_index], stage, json.dumps(profile_details), now, int(existing["id"])),
             )
             continue
 
@@ -116,8 +103,7 @@ def seed_demo_database(db_path: str) -> None:
             ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 name,email,"",exp,skills,resume_text,f"{name.replace(' ', '_')}_Demo.txt",DEMO_SOURCE,
-                "30 Days","","",job_ids[job_index],stage,score,rating,
-                json.dumps(ai_details),json.dumps(profile_details),now,now,
+                "30 Days","","",job_ids[job_index],stage,None,None,None,json.dumps(profile_details),now,now,
             ),
         )
 
