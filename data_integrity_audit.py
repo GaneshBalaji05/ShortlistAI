@@ -164,7 +164,7 @@ def audit_database(db_path: str | os.PathLike[str], *, sample_limit: int = 50) -
 
         if {"auth_sessions", "users"} <= tables:
             rows = con.execute(
-                """SELECT rowid AS id FROM auth_sessions s LEFT JOIN users u ON u.id=s.user_id
+                """SELECT s.user_id AS id FROM auth_sessions s LEFT JOIN users u ON u.id=s.user_id
                    WHERE u.id IS NULL"""
             ).fetchall()
             ids, total = _ids(rows, limit=sample_limit)
