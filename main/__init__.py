@@ -502,3 +502,8 @@ def ats_workspace():
         '<script src="/static/interviews-v1.js?v=1"></script>\n</body>'
     )
     return html
+
+
+@app.get("/sw.js")
+def root_service_worker():
+    return Response((BASE_DIR / "static" / "sw.js").read_text(), media_type="application/javascript", headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"})

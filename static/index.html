@@ -6,9 +6,9 @@
 <title>ShortlistAI ATS</title>
 <link rel="manifest" href="/static/manifest.webmanifest"/>
 <meta name="theme-color" content="#000000"/>
-<link rel="apple-touch-icon" href="/static/icons/icon-192.png"/>
-<link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png"/>
-<link rel="icon" type="image/png" sizes="512x512" href="/static/icons/icon-512.png"/>
+<link rel="apple-touch-icon" href="/static/icons/icon-192-v3.png"/>
+<link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192-v3.png"/>
+<link rel="icon" type="image/png" sizes="512x512" href="/static/icons/icon-512-v3.png"/>
 <style>
 :root{--bg:#0b1020;--panel:#121a30;--panel2:#18223d;--text:#f7f9ff;--muted:#9eaccb;--line:#263352;--accent:#7c9cff;--good:#50d890;--warn:#ffc857;--bad:#ff6b7a}
 *{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--text)}
@@ -77,6 +77,7 @@ body{background:#000!important;color:#fff}
 @media(max-width:900px){.view-mode-toggle{display:block}.force-desktop{padding-bottom:0!important;overflow-x:auto}.force-desktop .app{display:grid!important;grid-template-columns:240px minmax(960px,1fr)!important;min-width:1200px}.force-desktop .side{position:sticky!important;top:0!important;bottom:auto!important;left:auto!important;right:auto!important;height:100vh!important;padding:22px 16px!important;border-right:1px solid var(--line)!important;border-top:0!important;border-bottom:0!important;background:#050505!important;backdrop-filter:none!important}.force-desktop .side>.brand{display:block!important}.force-desktop .install{display:block}.force-desktop .nav{display:flex!important;flex-direction:column!important;grid-template-columns:none!important;height:auto!important;gap:7px!important;overflow:visible!important}.force-desktop .nav button{display:block!important;text-align:left!important;padding:12px 13px!important;font-size:inherit!important;min-height:44px!important;border-radius:10px!important}.force-desktop .nav button::before{display:inline-block!important;width:25px!important;font-size:inherit!important;line-height:inherit!important;margin:0!important}.force-desktop .nav button.active{box-shadow:inset 3px 0 0 #ff2d2d!important}.force-desktop .main{padding:26px!important;max-width:1450px!important}.force-desktop .mobile-header{display:none!important}.force-desktop .title h1{font-size:30px!important}.force-desktop .title p{font-size:inherit!important}.force-desktop .top{align-items:center!important;flex-direction:row!important;margin-bottom:22px!important}.force-desktop .stats{grid-template-columns:repeat(5,1fr)!important;gap:12px!important}.force-desktop .stat{padding:17px!important}.force-desktop .stat b{font-size:28px!important}.force-desktop .grid2,.force-desktop .eval-grid{grid-template-columns:1fr 1fr!important}.force-desktop .grid3{grid-template-columns:repeat(3,1fr)!important}.force-desktop .friendly-metrics{grid-template-columns:repeat(3,1fr)!important}.force-desktop .card{padding:18px!important;border-radius:16px!important}.force-desktop .pipeline{grid-template-columns:repeat(6,minmax(180px,1fr))!important}.force-desktop .profile{grid-template-columns:repeat(3,1fr)!important}.force-desktop .table{display:table!important;width:100%!important}.force-desktop .table thead{display:table-header-group!important}.force-desktop .table tbody{display:table-row-group!important}.force-desktop .table tr{display:table-row!important;background:transparent!important;border:0!important;padding:0!important;margin:0!important}.force-desktop .table th,.force-desktop .table td{display:table-cell!important;width:auto!important;border-bottom:1px solid var(--line)!important;padding:12px 10px!important}.force-desktop .toolbar input,.force-desktop .toolbar select{width:auto!important}.force-desktop .modal{padding:18px!important;align-items:center!important}.force-desktop .modalbox{width:min(980px,100%)!important;max-height:92vh!important;border-radius:18px!important;padding:20px!important}.force-desktop .eval-head{align-items:center!important}.force-desktop .eval-head .right,.force-desktop .result .right{margin-left:auto!important;width:auto!important}.force-desktop .row{align-items:center!important}.force-desktop .row>.btn,.force-desktop .row>.ghost{flex:initial!important}.force-desktop .quick-actions .btn,.force-desktop .quick-actions .ghost{width:auto!important;flex:initial!important}.force-desktop .shortlist-grid{display:grid!important}.force-desktop .shortlist-grid>.card{margin-bottom:0!important}.force-desktop .capture-preview{grid-template-columns:repeat(2,1fr)!important}}
 
 </style>
+<link rel="stylesheet" href="/static/talent-pool.css?v=1"/>
 </head>
 <body>
 <div class="app">
@@ -86,6 +87,7 @@ body{background:#000!important;color:#fff}
     <button class="active" data-tab="dashboard">Home</button>
     <button data-tab="jobs">Jobs</button>
     <button data-tab="candidates">Candidates</button>
+    <button data-tab="talent">Talent Pool</button>
     <button data-tab="pipeline">Pipeline</button>
     <button data-tab="shortlist">AI Match</button>
   </div>
@@ -121,6 +123,7 @@ body{background:#000!important;color:#fff}
   </div>
 </section>
 
+<section id="talent" class="section"></section>
 <section id="candidates" class="section">
   <div class="top"><div class="title"><div class="eyebrow">Talent database</div><h1>Candidates</h1><p>Search people, check AI fit, update stages and keep recruiter notes.</p></div></div>
   <div class="grid2">
@@ -227,6 +230,7 @@ function showTab(id){
   if(id==='dashboard')loadStats();
   if(id==='jobs')loadJobs();
   if(id==='candidates')loadCandidates();
+  if(id==='talent' && window.loadTalentPool)window.loadTalentPool();
   if(id==='pipeline')loadPipeline();
   if(id==='shortlist')loadJobs();
 }
@@ -396,9 +400,10 @@ let deferredInstall;
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e;$('installBtn').classList.remove('hidden')});
 $('installBtn').onclick=async()=>{if(!deferredInstall)return;deferredInstall.prompt();await deferredInstall.userChoice;deferredInstall=null;$('installBtn').classList.add('hidden')};
 window.addEventListener('appinstalled',()=>$('installBtn').classList.add('hidden'));
-if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/static/sw.js').catch(()=>{}));
+if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js', {scope:'/'}).catch(()=>{}));
 
 (async()=>{try{await loadJobs();await loadStats()}catch(e){toast(e.message)}})();
 </script>
+<script src="/static/talent-pool.js?v=1"></script>
 </body>
 </html>

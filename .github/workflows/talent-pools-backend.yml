@@ -1,0 +1,39 @@
+name: Talent pools backend
+on:
+  push:
+    branches: [feature/talent-pools-v2]
+    paths:
+      - '.github/workflows/talent-pools-backend.yml'
+      - '.github/scripts/talent_pools_backend_patch.py'
+      - 'shortlistai_talent.py'
+permissions:
+  contents: write
+jobs:
+  patch-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply backend patch
+        run: python .github/scripts/talent_pools_backend_patch.py
+      - name: Validate Python syntax and talent classification
+        run: |
+          python -m py_compile main.py shortlistai_talent.py
+          python - <<'PY'
+          from shortlistai_talent import classify_talent_pools, encode_talent_pools, decode_talent_pools
+          p = classify_talent_pools('Azure Data Engineer with Databricks, PySpark and Python')
+          assert 'Azure Data Engineer' in p, p
+          assert 'Data Engineer' in p, p
+          assert 'Databricks' in p, p
+          assert 'Python' in p, p
+          assert decode_talent_pools(encode_talent_pools(p)) == p
+          q = classify_talent_pools('Technical Recruiter using Naukri and LinkedIn Recruiter')
+          assert 'Recruiting / Talent Acquisition' in q, q
+          print('talent pool tests passed')
+          PY
+      - name: Commit generated backend changes
+        run: |
+          git config user.name "ShortlistAI Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add main.py
+          git diff --cached --quiet || git commit -m "Add talent pools manual candidate editing and activity history"
+          git push
