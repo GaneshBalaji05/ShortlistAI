@@ -120,12 +120,18 @@ def decode_talent_pools(value: str | None) -> List[str]:
     return [str(x).strip() for x in parsed if str(x).strip()]
 
 
-# main.py imports this module before defining its routes. Schedule a narrowly
-# scoped patch so production's existing `uvicorn main:app` start command gets
-# the Boolean-aware candidate search route without changing any other feature.
+# main.py imports this module before defining its routes. Schedule narrowly scoped
+# runtime patches after route creation so production keeps the current entrypoint.
 try:
     from boolean_search import schedule_main_candidate_search_patch
 
     schedule_main_candidate_search_patch()
+except ImportError:
+    pass
+
+try:
+    from final_review import schedule_final_review_patch
+
+    schedule_final_review_patch()
 except ImportError:
     pass
