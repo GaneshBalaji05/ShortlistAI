@@ -2,6 +2,8 @@
 
 Status: **foundation only — production cutover not enabled**.
 
+Foundation prerequisite PR #27 is merged into `main`. This migration branch now targets the current `main` foundation directly.
+
 Implemented on `backend-postgres-migration`:
 
 - SQLAlchemy database runtime with `DATABASE_URL` PostgreSQL support and SQLite fallback.
