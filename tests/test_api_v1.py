@@ -109,6 +109,10 @@ def run():
 
         app = FastAPI()
         auth_runtime.install_auth_routes(app)
+        # Explicitly exercise the production security installation contract. The call is
+        # idempotent and guarantees API v1 is attached even when auth was initialized in
+        # an isolated FastAPI test app instead of through main/__init__.py.
+        tenant_security.install(app)
 
         route_paths = {getattr(route, "path", "") for route in app.routes}
         for required in {
@@ -120,6 +124,10 @@ def run():
             "/api/v1/jobs/{job_id}",
         }:
             assert required in route_paths, f"Missing API v1 route: {required}"
+
+        import main as runtime_main
+        production_paths = {getattr(route, "path", "") for route in runtime_main.app.routes}
+        assert "/api/v1/health" in production_paths, "Production runtime must install API v1"
 
         one, cookie_one = register(app, "Workspace One", "one-api@example.com", "Workspace One")
         two, cookie_two = register(app, "Workspace Two", "two-api@example.com", "Workspace Two")
