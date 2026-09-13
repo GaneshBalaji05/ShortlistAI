@@ -9,6 +9,7 @@ def run() -> None:
     controller = (ROOT / "static" / "login-controller.js").read_text(encoding="utf-8")
     view = (ROOT / "static" / "login-view-icon.js").read_text(encoding="utf-8")
     sw = (ROOT / "static" / "sw.js").read_text(encoding="utf-8")
+    runtime = (ROOT / "main" / "__init__.py").read_text(encoding="utf-8")
 
     # The HTML must load one auth controller directly. Auth cannot depend on a
     # service worker taking control or injecting scripts after navigation.
@@ -32,6 +33,13 @@ def run() -> None:
     assert "window.__shortlistAIAuthReady = true" in controller
     assert "localStorage.setItem(LEGACY_SESSION_KEY" not in controller
     assert "sessionStorage.setItem(LEGACY_SESSION_KEY" not in controller
+
+    # The service worker is intentionally exposed at the site root so its scope
+    # can cover both / and /app. The runtime must explicitly allow root scope.
+    assert "serviceWorker.register('/sw.js?v=10', {scope: '/'})" in controller
+    assert '@app.get("/sw.js")' in runtime
+    assert '"Service-Worker-Allowed": "/"' in runtime
+    assert '"Cache-Control": "no-cache"' in runtime
 
     # The view switcher has no authority over auth wiring anymore.
     assert "login-fetch-fix" not in view
