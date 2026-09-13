@@ -170,6 +170,64 @@
     document.getElementById('dashSources').innerHTML = Object.keys(sources).length ? Object.entries(sources).sort((a,b)=>b[1]-a[1]).map(([name,value]) => `<div class="dashv2-source-row"><span>${safe(name)}</span><div class="dashv2-source-track"><i style="width:${Math.round(value/max*100)}%"></i></div><b>${value}</b></div>`).join('') : '<div class="dashv2-empty">No source data available.</div>';
   }
 
+  async function reloadDashboard() {
+    const response = await fetch('/api/dashboard-v2', {cache:'no-store'});
+    if (!response.ok) throw new Error('Dashboard data could not be loaded');
+    payload = await response.json();
+    renderData();
+  }
+
+  async function attachInterviewWorkflow(candidateId) {
+    const modalBody = document.getElementById('modalBody');
+    if (!modalBody || document.getElementById('roundWorkflow')) return;
+    try {
+      const response = await fetch(`/api/candidates/${candidateId}`, {cache:'no-store'});
+      if (!response.ok) return;
+      const candidate = await response.json();
+      const details = candidate.profile_details || {};
+      const current = (payload?.candidates || []).find(c => c.id === candidateId) || {};
+      const l1 = details.l1_status || current.l1_status || 'Pending Scheduling';
+      const l2 = details.l2_status || current.l2_status || 'Not Started';
+      const options = ['Not Started','Pending Scheduling','Scheduled','Cleared','Rejected','Not Applicable'];
+      const optionHtml = selected => options.map(x => `<option ${x===selected?'selected':''}>${x}</option>`).join('');
+      const card = document.createElement('div');
+      card.id = 'roundWorkflow';
+      card.className = 'card round-workflow';
+      card.innerHTML = `<div class="round-workflow-head"><div><h3>Interview workflow</h3><div class="helper">Update L1/L2 progress. Dashboard counts refresh automatically.</div></div></div>
+        <div class="round-workflow-grid"><div class="field"><label>L1 status</label><select id="roundL1">${optionHtml(l1)}</select></div><div class="field"><label>L2 status</label><select id="roundL2">${optionHtml(l2)}</select></div></div>
+        <button id="saveRoundWorkflow" class="btn" type="button">Save interview status</button>`;
+      const evalCard = [...modalBody.querySelectorAll('.card')].find(x => x.textContent.includes('AI evaluation'));
+      if (evalCard) modalBody.insertBefore(card, evalCard); else modalBody.appendChild(card);
+      document.getElementById('saveRoundWorkflow').onclick = async () => {
+        const button = document.getElementById('saveRoundWorkflow');
+        button.disabled = true; button.textContent = 'Saving…';
+        try {
+          const r = await fetch(`/api/candidates/${candidateId}/interview-status`, {
+            method:'PATCH', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({l1_status:document.getElementById('roundL1').value,l2_status:document.getElementById('roundL2').value})
+          });
+          const d = await r.json().catch(()=>({}));
+          if (!r.ok) throw new Error(d.detail || 'Could not update interview status');
+          if (window.toast) window.toast('Interview status updated');
+          await reloadDashboard();
+          button.textContent = 'Saved';
+          setTimeout(()=>{button.textContent='Save interview status';button.disabled=false;},700);
+        } catch (error) {
+          if (window.toast) window.toast(error.message);
+          button.textContent = 'Save interview status'; button.disabled = false;
+        }
+      };
+    } catch (_) {}
+  }
+
+  const originalOpenCandidate = window.openCandidate;
+  if (typeof originalOpenCandidate === 'function') {
+    window.openCandidate = async function(candidateId) {
+      await originalOpenCandidate(candidateId);
+      setTimeout(() => attachInterviewWorkflow(candidateId), 30);
+    };
+  }
+
   async function boot() {
     try {
       const response = await fetch('/api/dashboard-v2', {cache:'no-store'});
