@@ -307,6 +307,13 @@ def install(app) -> None:
             legacy.db = workspace_db
     except Exception:
         pass
+
+    # Install versioned routes before the middleware stack is rebuilt. The middleware
+    # protects every /api/v1 route and supplies the user/workspace ContextVars consumed
+    # by the service/repository layer.
+    from shortlistai.api.v1 import install_api_v1
+    install_api_v1(app)
+
     if getattr(app.state, "shortlistai_tenant_security", False):
         return
     app.user_middleware.insert(0, Middleware(SessionTenantMiddleware))
