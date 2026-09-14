@@ -186,19 +186,6 @@ def run() -> None:
 
         # Scoring is role-specific: a duplicate submitted for another role must not
         # overwrite the score or original job assignment.
-        repo1.upsert(
-            {
-                "email": "candidate.one@example.com",
-                "phone": "9876543210",
-                "job_id": job2,
-                "stage": "Applied",
-                "ai_score": 5.0,
-                "rating": "Weak",
-                "ai_details": json.dumps({"score": 5.0}),
-            },
-            reason="Different role duplicate",
-        ) if False else None
-        # Use a same-workspace second job for the role-specific score test.
         with engine.begin() as connection:
             second_job = int(
                 connection.execute(
