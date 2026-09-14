@@ -59,6 +59,9 @@ jobs:
       - name: Final review regression
         run: PYTHONPATH=. python tests/test_final_review.py
 
+      - name: Candidate persistence repository regression
+        run: PYTHONPATH=. python tests/test_candidate_persistence_repository.py
+
   postgres-schema:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/backend-postgres-migration' || github.event_name == 'pull_request'
@@ -103,6 +106,9 @@ jobs:
 
       - name: Verify repository workspace isolation
         run: PYTHONPATH=. python tests/test_workspace_repository.py
+
+      - name: Verify candidate persistence repository
+        run: PYTHONPATH=. python tests/test_candidate_persistence_repository.py
 
       - name: Verify SQLite data copy
         run: PYTHONPATH=. python tests/test_sqlite_to_postgres_migration.py
