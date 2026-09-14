@@ -2,6 +2,14 @@
 
 This runbook is intentionally conservative. Production remains on SQLite until every gate below is completed.
 
+## Production target
+
+- Production PostgreSQL provider: **Neon**.
+- Preferred region: **Singapore**, matching the Render web service region where available.
+- Use a Neon pooled connection string for the application and require SSL/TLS.
+- Do **not** set Render `DATABASE_URL` until all live auth/ATS persistence paths are PostgreSQL-capable and the rehearsal copy passes validation.
+- The existing expiring Render PostgreSQL instance may be used only for disposable rehearsal/testing; it must not become the production source of truth.
+
 ## Current migration architecture
 
 - `DATABASE_URL` selects PostgreSQL when configured.
@@ -14,26 +22,29 @@ This runbook is intentionally conservative. Production remains on SQLite until e
 
 1. Hardening PR must be merged first.
 2. PostgreSQL migration CI must be green.
-3. Create a managed PostgreSQL database in the same Render workspace/region as the app where possible.
-4. Take a point-in-time copy/backup of the production SQLite database.
-5. Run the migration script without `--apply`; verify every source table count and tenant-isolation validation.
-6. Run `alembic upgrade head` against the new PostgreSQL database.
-7. Confirm the PostgreSQL target is empty before data copy.
-8. Run the migration with `--apply` using the production SQLite snapshot, not a changing live file.
-9. Verify row counts, foreign keys, workspace isolation, authentication records, jobs, candidates, notes, activity, and interviews.
-10. Run a production-like smoke test against PostgreSQL before switching the live service.
+3. Provision the Neon PostgreSQL database in Singapore where available and record both pooled application and direct migration connection strings securely.
+4. Confirm SSL/TLS is required and connectivity succeeds from a production-like environment.
+5. Take a point-in-time copy/backup of the production SQLite database.
+6. Run the migration script without `--apply`; verify every source table count and tenant-isolation validation.
+7. Run `alembic upgrade head` against the new PostgreSQL database using the direct migration connection.
+8. Confirm the PostgreSQL target is empty before data copy.
+9. Run the migration with `--apply` using the production SQLite snapshot, not a changing live file.
+10. Verify row counts, foreign keys, workspace isolation, authentication records, jobs, candidates, notes, activity, and interviews.
+11. Run a production-like smoke test against PostgreSQL before switching the live service.
+12. Confirm no live auth/ATS route still depends on direct SQLite persistence when `DATABASE_URL` is enabled.
 
 ## Cutover
 
 1. Put writes into a short maintenance/freeze window so SQLite stops changing during the final copy.
 2. Capture the final SQLite snapshot.
 3. Recreate/clear the target PostgreSQL database if a rehearsal copy was used.
-4. Run `alembic upgrade head`.
+4. Run `alembic upgrade head` using the direct Neon connection.
 5. Run `python scripts/migrate_sqlite_to_postgres.py --sqlite-path <snapshot> --database-url <postgres-url> --apply`.
-6. Verify data counts and tenant isolation.
-7. Configure Render `DATABASE_URL` for ShortlistAI.
+6. Verify data counts, foreign keys and tenant isolation.
+7. Configure Render `DATABASE_URL` with the Neon pooled application connection string.
 8. Deploy the PostgreSQL-capable application release.
 9. Run login, Create Account, Talent Pool, Boolean search, candidate CRUD, dashboard, interview, and password-recovery smoke tests.
+10. Keep the final SQLite snapshot untouched through the rollback window.
 
 ## Rollback
 
