@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
@@ -124,7 +125,7 @@ def create_candidate(values: Mapping[str, Any]) -> dict[str, Any]:
         payload["talent_pools"] = classify_talent_pools(
             str(payload.get("resume_text") or ""),
             str(payload.get("skills") or ""),
-            payload.get("profile_details") or {},
+            json.dumps(payload.get("profile_details") or {}, ensure_ascii=False),
         )
 
     try:
