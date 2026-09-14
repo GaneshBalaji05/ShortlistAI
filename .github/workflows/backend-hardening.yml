@@ -62,6 +62,9 @@ jobs:
       - name: Candidate persistence repository regression
         run: PYTHONPATH=. python tests/test_candidate_persistence_repository.py
 
+      - name: Candidate API v1 create route regression
+        run: PYTHONPATH=. python tests/test_api_v1_candidates_write.py
+
   postgres-schema:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/backend-postgres-migration' || github.event_name == 'pull_request'
@@ -109,6 +112,9 @@ jobs:
 
       - name: Verify candidate persistence repository
         run: PYTHONPATH=. python tests/test_candidate_persistence_repository.py
+
+      - name: Verify candidate API v1 create route
+        run: PYTHONPATH=. python tests/test_api_v1_candidates_write.py
 
       - name: Verify SQLite data copy
         run: PYTHONPATH=. python tests/test_sqlite_to_postgres_migration.py
