@@ -188,10 +188,17 @@ def run() -> None:
 
     fd, path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
+    database_url = f"sqlite:///{path}"
+    previous_database_url = os.environ.get("DATABASE_URL")
+    os.environ["DATABASE_URL"] = database_url
     try:
-        _exercise(f"sqlite:///{path}")
+        _exercise(database_url)
         print("API v1 candidate create route SQLite regression passed")
     finally:
+        if previous_database_url is None:
+            os.environ.pop("DATABASE_URL", None)
+        else:
+            os.environ["DATABASE_URL"] = previous_database_url
         try:
             os.remove(path)
         except OSError:
