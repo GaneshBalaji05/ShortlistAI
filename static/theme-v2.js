@@ -1,13 +1,6 @@
 (() => {
-  const AUTH_SESSION_KEY = 'shortlistai-auth-session';
-  const authSessionRaw = localStorage.getItem(AUTH_SESSION_KEY) || sessionStorage.getItem(AUTH_SESSION_KEY);
-  let authSession = null;
-  try { authSession = JSON.parse(authSessionRaw || 'null'); } catch (_) {}
-  if ((!authSession || !authSession.token) && location.pathname === '/app') {
-    location.replace('/');
-    return;
-  }
-
+  // Browser authentication is server/cookie-first. The HttpOnly session cookie is
+  // the source of truth; readable tokens in localStorage/sessionStorage are legacy.
   const icons = {
     dashboard:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 13h6V4H4v9Zm10 7h6v-9h-6v9ZM4 20h6v-3H4v3Zm10-13h6V4h-6v3Z"/></svg>',
     talent:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M16 5a3 3 0 0 1 0 6M19 20v-2a6 6 0 0 0-2-4"/></svg>',
@@ -70,26 +63,50 @@
     button.prepend(icon);
   });
 
+  async function logoutSession(){
+    try {
+      await fetch('/api/auth/logout', {method:'POST', credentials:'same-origin'});
+    } catch (_) {}
+    try {
+      localStorage.removeItem('shortlistai-auth-session');
+      sessionStorage.removeItem('shortlistai-auth-session');
+      localStorage.removeItem('shortlistai-preview-session');
+    } catch (_) {}
+    location.replace('/');
+  }
+
+  const mobileHeader = document.querySelector('.mobile-header');
+  if (mobileHeader && !mobileHeader.querySelector('.mobile-signout')) {
+    const mobileSignout = document.createElement('button');
+    mobileSignout.className = 'ghost mobile-signout';
+    mobileSignout.type = 'button';
+    mobileSignout.textContent = 'Sign out';
+    mobileSignout.setAttribute('aria-label', 'Sign out');
+    mobileSignout.onclick = logoutSession;
+    mobileHeader.appendChild(mobileSignout);
+  }
+
   const side = document.querySelector('.side');
   if (side && !side.querySelector('.sidebar-account')) {
-    let email = 'Signed in user';
-    try { email = authSession?.user?.email || email; } catch (_) {}
-    const name = email.split('@')[0].replace(/[._-]+/g,' ').replace(/\b\w/g,m=>m.toUpperCase());
     const footer = document.createElement('div');
     footer.className = 'sidebar-account';
-    footer.innerHTML = `<div class="account-row"><div class="avatar">${(name[0] || 'S').toUpperCase()}</div><div class="account-copy"><b>${escapeHtml(name)}</b><small>Recruiter workspace</small></div><button class="signout" type="button" aria-label="Sign out">↗</button></div>`;
+    footer.innerHTML = '<div class="account-row"><div class="avatar">S</div><div class="account-copy"><b>Signed in user</b><small>Recruiter workspace</small></div><button class="signout" type="button" aria-label="Sign out">↗</button></div>';
     side.appendChild(footer);
-    footer.querySelector('.signout').onclick = async () => {
-      try {
-        if (authSession?.token) {
-          await fetch('/api/auth/logout', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({token:authSession.token})});
-        }
-      } catch (_) {}
-      localStorage.removeItem(AUTH_SESSION_KEY);
-      sessionStorage.removeItem(AUTH_SESSION_KEY);
-      localStorage.removeItem('shortlistai-preview-session');
-      location.href='/';
-    };
+
+    fetch(`/api/auth/session?_=${Date.now()}`, {cache:'no-store', credentials:'same-origin'})
+      .then(response => response.ok ? response.json() : null)
+      .then(data => {
+        const email = data?.user?.email || '';
+        if (!email) return;
+        const name = email.split('@')[0].replace(/[._-]+/g,' ').replace(/\b\w/g,m=>m.toUpperCase());
+        const avatar = footer.querySelector('.avatar');
+        const copy = footer.querySelector('.account-copy b');
+        if (avatar) avatar.textContent = (name[0] || 'S').toUpperCase();
+        if (copy) copy.textContent = name;
+      })
+      .catch(() => {});
+
+    footer.querySelector('.signout').onclick = logoutSession;
   }
 
   function escapeHtml(value){

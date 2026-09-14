@@ -1,0 +1,27 @@
+name: Cookie-only auth hotfix
+
+on:
+  pull_request:
+    paths:
+      - 'static/theme-v2.js'
+      - 'static/login-controller.js'
+      - 'tests/test_cookie_only_frontend_auth.py'
+      - '.github/workflows/cookie-only-auth-hotfix.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'static/theme-v2.js'
+      - 'static/login-controller.js'
+      - 'tests/test_cookie_only_frontend_auth.py'
+      - '.github/workflows/cookie-only-auth-hotfix.yml'
+
+jobs:
+  cookie-auth-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify cookie-only frontend auth contract
+        run: python tests/test_cookie_only_frontend_auth.py
