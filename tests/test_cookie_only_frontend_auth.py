@@ -16,6 +16,13 @@ def run():
     # Logout must revoke the cookie-backed server session; no readable token is required.
     assert "fetch('/api/auth/logout', {method:'POST', credentials:'same-origin'})" in theme
     assert "body:JSON.stringify({token" not in theme
+    assert "async function logoutSession()" in theme
+
+    # Both mobile and desktop must expose controls wired to the same cookie logout flow.
+    assert "mobile-signout" in theme
+    assert "mobileSignout.textContent = 'Sign out'" in theme
+    assert "mobileSignout.onclick = logoutSession" in theme
+    assert "footer.querySelector('.signout').onclick = logoutSession" in theme
 
     # Login controller must still verify the cookie before entering the workspace.
     assert "await verifyCookieSession();" in login
