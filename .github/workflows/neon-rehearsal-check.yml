@@ -1,0 +1,59 @@
+name: Neon Rehearsal Safety
+
+on:
+  push:
+    branches:
+      - phase2/neon-rehearsal-schema-sync
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  rehearsal-contract:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: shortlistai
+          POSTGRES_PASSWORD: shortlistai
+          POSTGRES_DB: shortlistai_rehearsal
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U shortlistai -d shortlistai_rehearsal"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+psycopg://shortlistai:shortlistai@127.0.0.1:5432/shortlistai_rehearsal
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Compile rehearsal sources
+        run: python -m compileall -q alembic scripts tests shortlistai
+
+      - name: Upgrade PostgreSQL schema
+        run: alembic upgrade head
+
+      - name: Verify current PostgreSQL schema
+        run: PYTHONPATH=. python tests/test_postgres_schema.py
+
+      - name: Verify snapshot and Neon rehearsal copy
+        run: PYTHONPATH=. python tests/test_neon_rehearsal_contract.py
+
+      - name: Verify latest migration is reversible
+        run: |
+          alembic downgrade 20260914_0002
+          alembic upgrade head
+          PYTHONPATH=. python tests/test_postgres_schema.py
