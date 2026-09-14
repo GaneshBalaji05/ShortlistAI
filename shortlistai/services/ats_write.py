@@ -5,8 +5,14 @@ from typing import Any, Mapping
 
 from fastapi import HTTPException
 
+from shortlistai.db.candidate_repository import (
+    CandidateIdentityConflict,
+    CandidatePersistenceRepository,
+    CandidateReferenceError,
+)
 from shortlistai.db.repositories import WorkspaceRepository
 from shortlistai.db.runtime import create_database_engine
+from shortlistai_talent import classify_talent_pools
 from tenant_security import current_workspace
 
 
@@ -24,6 +30,11 @@ JOB_RESPONSE_FIELDS = (
 
 def _repository() -> WorkspaceRepository:
     return WorkspaceRepository(create_database_engine(), current_workspace())
+
+
+def _candidate_repository() -> CandidatePersistenceRepository:
+    workspace_id = current_workspace()
+    return CandidatePersistenceRepository(create_database_engine(), workspace_id)
 
 
 def _clean_optional(value: Any) -> str | None:
@@ -94,3 +105,43 @@ def update_job(job_id: int, values: Mapping[str, Any]) -> dict[str, Any]:
     if row is None:
         raise HTTPException(status_code=404, detail="Job not found")
     return {"data": _job_response(row)}
+
+
+def create_candidate(values: Mapping[str, Any]) -> dict[str, Any]:
+    """Create or identity-merge one candidate inside the authenticated workspace.
+
+    This is the first candidate write slice on the canonical API. The service injects the
+    authenticated workspace rather than accepting tenant identity from the request body,
+    then delegates all duplicate/identity/job validation and the atomic write to the
+    SQLAlchemy candidate repository.
+    """
+
+    workspace_id = current_workspace()
+    payload = dict(values)
+    payload["workspace_id"] = workspace_id
+
+    if payload.get("talent_pools") is None:
+        payload["talent_pools"] = classify_talent_pools(
+            str(payload.get("resume_text") or ""),
+            str(payload.get("skills") or ""),
+            payload.get("profile_details") or {},
+        )
+
+    try:
+        result = _candidate_repository().upsert(payload, reason="API v1 candidate create")
+    except CandidateIdentityConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except CandidateReferenceError as exc:
+        # Missing and foreign-workspace job references intentionally share one 404 contract.
+        raise HTTPException(status_code=404, detail="Job not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return {
+        "data": {
+            "id": int(result["id"]),
+            "merged": bool(result["merged"]),
+            "changed": list(result.get("changed") or []),
+            "talent_pools": list(result.get("talent_pools") or []),
+        }
+    }
