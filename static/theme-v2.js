@@ -63,6 +63,29 @@
     button.prepend(icon);
   });
 
+  async function logoutSession(){
+    try {
+      await fetch('/api/auth/logout', {method:'POST', credentials:'same-origin'});
+    } catch (_) {}
+    try {
+      localStorage.removeItem('shortlistai-auth-session');
+      sessionStorage.removeItem('shortlistai-auth-session');
+      localStorage.removeItem('shortlistai-preview-session');
+    } catch (_) {}
+    location.replace('/');
+  }
+
+  const mobileHeader = document.querySelector('.mobile-header');
+  if (mobileHeader && !mobileHeader.querySelector('.mobile-signout')) {
+    const mobileSignout = document.createElement('button');
+    mobileSignout.className = 'ghost mobile-signout';
+    mobileSignout.type = 'button';
+    mobileSignout.textContent = 'Sign out';
+    mobileSignout.setAttribute('aria-label', 'Sign out');
+    mobileSignout.onclick = logoutSession;
+    mobileHeader.appendChild(mobileSignout);
+  }
+
   const side = document.querySelector('.side');
   if (side && !side.querySelector('.sidebar-account')) {
     const footer = document.createElement('div');
@@ -83,17 +106,7 @@
       })
       .catch(() => {});
 
-    footer.querySelector('.signout').onclick = async () => {
-      try {
-        await fetch('/api/auth/logout', {method:'POST', credentials:'same-origin'});
-      } catch (_) {}
-      try {
-        localStorage.removeItem('shortlistai-auth-session');
-        sessionStorage.removeItem('shortlistai-auth-session');
-        localStorage.removeItem('shortlistai-preview-session');
-      } catch (_) {}
-      location.replace('/');
-    };
+    footer.querySelector('.signout').onclick = logoutSession;
   }
 
   function escapeHtml(value){
