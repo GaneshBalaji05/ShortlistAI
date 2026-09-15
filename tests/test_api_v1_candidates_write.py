@@ -116,6 +116,21 @@ def _exercise(database_url: str) -> None:
                 assert getattr(exc, "detail", None) == "Job not found"
             else:
                 raise AssertionError("Cross-workspace candidate job reference was accepted")
+
+            # Preserve legacy stage validation: unknown stage values must fail, not become Applied.
+            try:
+                create(
+                    CandidateCreateIn(
+                        name="Invalid Stage Candidate",
+                        email=f"invalid-stage-{suffix}@example.com",
+                        stage="RandomStage",
+                    )
+                )
+            except Exception as exc:
+                assert getattr(exc, "status_code", None) == 400
+                assert getattr(exc, "detail", None) == "Invalid stage"
+            else:
+                raise AssertionError("Unknown candidate stage was silently accepted")
         finally:
             tenant_security._workspace.reset(token)
 
