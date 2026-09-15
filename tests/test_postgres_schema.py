@@ -14,17 +14,30 @@ EXPECTED_TABLES = {
     "jobs",
     "candidates",
     "candidate_identities",
+    "ingestion_batches",
+    "ingestion_items",
     "notes",
     "activity_log",
     "interviews",
     "security_migrations",
     "alembic_version",
 }
-WORKSPACE_TABLES = {"jobs", "candidates", "candidate_identities", "notes", "activity_log", "interviews"}
+WORKSPACE_TABLES = {
+    "jobs",
+    "candidates",
+    "candidate_identities",
+    "ingestion_batches",
+    "ingestion_items",
+    "notes",
+    "activity_log",
+    "interviews",
+}
 REQUIRED_INDEXES = {
     "jobs": {"idx_jobs_workspace"},
     "candidates": {"idx_candidates_workspace", "idx_candidates_workspace_job"},
     "candidate_identities": {"idx_candidate_identities_candidate"},
+    "ingestion_batches": {"idx_ingestion_batches_workspace", "idx_ingestion_batches_workspace_status"},
+    "ingestion_items": {"idx_ingestion_items_workspace_batch", "idx_ingestion_items_workspace_status"},
     "notes": {"idx_notes_workspace", "idx_notes_candidate"},
     "activity_log": {"idx_activity_log_workspace", "idx_activity_log_candidate"},
     "interviews": {"idx_interviews_workspace", "idx_interviews_candidate", "idx_interviews_scheduled"},
@@ -67,12 +80,45 @@ def main() -> None:
         for fk in identity_fks
     ), "candidate_identities.candidate_id must reference candidates.id"
 
+    ingestion_batch_fks = inspector.get_foreign_keys("ingestion_batches")
+    assert any(
+        fk.get("constrained_columns") == ["created_by"]
+        and fk.get("referred_table") == "users"
+        for fk in ingestion_batch_fks
+    ), "ingestion_batches.created_by must reference users.id"
+    ingestion_item_fks = inspector.get_foreign_keys("ingestion_items")
+    assert any(
+        fk.get("constrained_columns") == ["batch_id"]
+        and fk.get("referred_table") == "ingestion_batches"
+        for fk in ingestion_item_fks
+    ), "ingestion_items.batch_id must reference ingestion_batches.id"
+    assert any(
+        fk.get("constrained_columns") == ["candidate_id"]
+        and fk.get("referred_table") == "candidates"
+        for fk in ingestion_item_fks
+    ), "ingestion_items.candidate_id must reference candidates.id"
+
     with engine.connect() as connection:
         transaction = connection.begin()
         try:
             workspace_id = connection.execute(
                 text("INSERT INTO workspaces(name, created_at) VALUES(:name, :created_at) RETURNING id"),
                 {"name": "Postgres CI Workspace", "created_at": "2026-09-14T00:00:00Z"},
+            ).scalar_one()
+            user_id = connection.execute(
+                text(
+                    "INSERT INTO users(workspace_id,full_name,email,password_hash,password_salt,role,created_at) "
+                    "VALUES(:workspace_id,:full_name,:email,:password_hash,:password_salt,:role,:created_at) RETURNING id"
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "full_name": "Postgres CI Admin",
+                    "email": "postgres-ci@example.test",
+                    "password_hash": "hash",
+                    "password_salt": "salt",
+                    "role": "Workspace Admin",
+                    "created_at": "2026-09-14T00:00:00Z",
+                },
             ).scalar_one()
             job_id = connection.execute(
                 text(
@@ -112,6 +158,30 @@ def main() -> None:
                     "created_at": "2026-09-14T00:00:00Z",
                 },
             )
+            batch_id = connection.execute(
+                text(
+                    "INSERT INTO ingestion_batches(workspace_id,created_by,job_id,source,status,total_count,processed_count,created_count,merged_count,failed_count,created_at,updated_at) "
+                    "VALUES(:workspace_id,:created_by,:job_id,'Postgres CI','pending',1,0,0,0,0,:created_at,:updated_at) RETURNING id"
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "created_by": user_id,
+                    "job_id": job_id,
+                    "created_at": "2026-09-14T00:00:00Z",
+                    "updated_at": "2026-09-14T00:00:00Z",
+                },
+            ).scalar_one()
+            connection.execute(
+                text(
+                    "INSERT INTO ingestion_items(workspace_id,batch_id,idempotency_key,source_filename,status,attempts,created_at) "
+                    "VALUES(:workspace_id,:batch_id,'item-1','profile.txt','pending',0,:created_at)"
+                ),
+                {
+                    "workspace_id": workspace_id,
+                    "batch_id": batch_id,
+                    "created_at": "2026-09-14T00:00:00Z",
+                },
+            )
             saved = connection.execute(
                 text("SELECT workspace_id,job_id FROM candidates WHERE id=:id"),
                 {"id": candidate_id},
@@ -123,6 +193,12 @@ def main() -> None:
                 {"workspace_id": workspace_id},
             ).mappings().one()
             assert identity["candidate_id"] == candidate_id
+            ingestion = connection.execute(
+                text("SELECT workspace_id,total_count FROM ingestion_batches WHERE id=:id"),
+                {"id": batch_id},
+            ).mappings().one()
+            assert ingestion["workspace_id"] == workspace_id
+            assert ingestion["total_count"] == 1
         finally:
             transaction.rollback()
 

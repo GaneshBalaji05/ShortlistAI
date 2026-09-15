@@ -18,6 +18,8 @@ TABLE_ORDER = (
     "jobs",
     "candidates",
     "candidate_identities",
+    "ingestion_batches",
+    "ingestion_items",
     "notes",
     "activity_log",
     "interviews",
@@ -27,11 +29,23 @@ WORKSPACE_TABLES = (
     "jobs",
     "candidates",
     "candidate_identities",
+    "ingestion_batches",
+    "ingestion_items",
     "notes",
     "activity_log",
     "interviews",
 )
-SEQUENCE_TABLES = ("workspaces", "users", "jobs", "candidates", "notes", "activity_log", "interviews")
+SEQUENCE_TABLES = (
+    "workspaces",
+    "users",
+    "jobs",
+    "candidates",
+    "ingestion_batches",
+    "ingestion_items",
+    "notes",
+    "activity_log",
+    "interviews",
+)
 
 # These keys are intentionally stronger than simple row counts. They preserve the
 # relationships that matter during cutover without logging the values themselves.
