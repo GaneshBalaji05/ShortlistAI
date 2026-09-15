@@ -6,6 +6,7 @@ from typing import Any, Mapping
 
 from fastapi import HTTPException
 
+from final_review import PIPELINE_STAGES, STAGE_ALIASES
 from shortlistai.db.candidate_repository import (
     CandidateIdentityConflict,
     CandidatePersistenceRepository,
@@ -120,6 +121,12 @@ def create_candidate(values: Mapping[str, Any]) -> dict[str, Any]:
     workspace_id = current_workspace()
     payload = dict(values)
     payload["workspace_id"] = workspace_id
+
+    raw_stage = str(payload.get("stage") or "Sourced").strip()
+    if raw_stage not in PIPELINE_STAGES and raw_stage not in STAGE_ALIASES:
+        # Preserve the legacy create-route contract: unknown stages are rejected rather than
+        # silently canonicalized to Applied.
+        raise HTTPException(status_code=400, detail="Invalid stage")
 
     if payload.get("talent_pools") is None:
         payload["talent_pools"] = classify_talent_pools(
