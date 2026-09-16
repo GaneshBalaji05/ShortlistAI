@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -10,9 +12,29 @@ from shortlistai.services.ats_read import (
     list_candidates,
     list_jobs,
 )
-from shortlistai.services.ats_write import create_job, update_job
+from shortlistai.services.ats_write import create_candidate, create_job, update_job
 
 router = APIRouter(prefix="/api/v1", tags=["API v1"])
+
+
+class CandidateCreateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    name: str = Field(min_length=1, max_length=200)
+    email: str = Field(default="", max_length=320)
+    phone: str = Field(default="", max_length=80)
+    experience: float | None = Field(default=None, ge=0, le=80)
+    skills: str = Field(default="", max_length=20_000)
+    source: str = Field(default="", max_length=200)
+    notice_period: str = Field(default="", max_length=200)
+    current_ctc: str = Field(default="", max_length=120)
+    expected_ctc: str = Field(default="", max_length=120)
+    resume_text: str = Field(default="", max_length=500_000)
+    resume_filename: str = Field(default="", max_length=500)
+    profile_details: dict[str, Any] | None = None
+    talent_pools: list[str] | None = None
+    job_id: int | None = Field(default=None, ge=1)
+    stage: str = Field(default="Sourced", min_length=1, max_length=80)
 
 
 class JobCreateIn(BaseModel):
@@ -58,6 +80,11 @@ def api_candidates(
     offset: int = Query(default=0, ge=0),
 ):
     return list_candidates(limit=limit, offset=offset)
+
+
+@router.post("/candidates", status_code=201)
+def api_create_candidate(payload: CandidateCreateIn):
+    return create_candidate(payload.model_dump())
 
 
 @router.get("/candidates/{candidate_id}")
