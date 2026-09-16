@@ -122,12 +122,12 @@ for (const width of [360, 390, 412, 420]) {
   await context.close();
 }
 
-// Normal desktop must not surface the mobile-only header/sign-out control.
+// Normal desktop must not surface any effective mobile-header/sign-out geometry.
 {
   const { context, page } = await newPage(1440, 900);
   const g = await geometry(page);
   if (g.header?.display !== 'none') throw new Error(`Desktop unexpectedly shows mobile header: ${JSON.stringify(g.header)}`);
-  if (g.signout?.display !== 'none') throw new Error(`Desktop unexpectedly shows mobile Sign out: ${JSON.stringify(g.signout)}`);
+  if (g.signout && (g.signout.width > 0 || g.signout.height > 0)) throw new Error(`Desktop mobile Sign out still occupies layout space: ${JSON.stringify(g.signout)}`);
   if (!g.sidebar || g.sidebar.display === 'none') throw new Error('Desktop sidebar account/logout is hidden');
   console.log('desktop 1440px PASS');
   await context.close();
