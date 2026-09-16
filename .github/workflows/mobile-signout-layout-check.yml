@@ -25,4 +25,15 @@ jobs:
           npm install playwright@1.55.0
           npx playwright install --with-deps chromium
       - name: Verify Sign out layout at required breakpoints
-        run: node tests/mobile_signout_layout_check.mjs
+        shell: bash
+        run: |
+          set +e
+          node tests/mobile_signout_layout_check.mjs 2>&1 | tee mobile-signout-layout.log
+          status=${PIPESTATUS[0]}
+          exit $status
+      - name: Upload responsive diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-signout-layout-diagnostics
+          path: mobile-signout-layout.log
