@@ -2,9 +2,11 @@
 
 Status: **foundation only — production cutover not enabled**.
 
-Foundation prerequisite PR #27 is merged into `main`. This migration branch now targets the current `main` foundation directly.
+Production target decision: **Neon PostgreSQL**, preferably Singapore to stay close to the Render Singapore web service. Production must remain on SQLite until the runtime migration and zero-loss cutover gates are complete.
 
-Implemented on `backend-postgres-migration`:
+Foundation prerequisite PR #27 is merged into `main`. This migration work targets the current `main` foundation directly.
+
+Implemented on `main` / the PostgreSQL foundation:
 
 - SQLAlchemy database runtime with `DATABASE_URL` PostgreSQL support and SQLite fallback.
 - Native workspace-scoped SQLAlchemy schema for ATS/auth tables.
@@ -13,12 +15,19 @@ Implemented on `backend-postgres-migration`:
 - Guarded SQLite-to-PostgreSQL copy command with dry-run default and empty-target enforcement.
 - Existing SQLite backend regression suite preserved.
 - Cutover and rollback runbook.
+- API v1 candidate/job reads use the repository/database abstraction.
+- API v1 job create/update uses workspace-scoped repository writes.
 
 Not yet enabled in production:
 
-- Live application reads/writes still use the existing SQLite path.
-- Render managed PostgreSQL has not been provisioned or attached.
-- Runtime monkey-patch/regex tenant SQL has not yet been replaced with repository-based PostgreSQL access.
+- Live application still contains legacy SQLite-specific ATS/auth/interview persistence paths.
+- Neon has not yet been provisioned/connected to this ChatGPT workspace.
+- Render `DATABASE_URL` has not been changed.
 - No production data has been copied.
+- Runtime monkey-patch/legacy SQLite persistence has not yet been fully replaced with repository-based PostgreSQL access.
 
-Next engineering step: migrate auth and core ATS repositories to the database abstraction while keeping the SQLite implementation available for compatibility until production cutover verification is complete.
+Current safety rule:
+
+**Do not set production `DATABASE_URL` until no live auth/ATS route depends on direct SQLite persistence, PostgreSQL CI/isolation tests pass, and a snapshot-to-Neon rehearsal copy matches all critical table counts.**
+
+Next engineering step: continue migrating auth, candidate writes, dashboard/interview persistence and remaining ATS routes onto explicit workspace-scoped repositories while preserving SQLite rollback compatibility. After that, provision Neon, rehearse the copy, validate, then perform the controlled Render cutover.
