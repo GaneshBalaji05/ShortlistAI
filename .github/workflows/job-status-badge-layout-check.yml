@@ -1,0 +1,28 @@
+name: Job status badge layout check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'static/dashboard-v2.css'
+      - 'static/dashboard-v2.js'
+      - 'static/theme-v2.css'
+      - 'static/index.html'
+      - 'tests/job_status_badge_layout_check.mjs'
+      - '.github/workflows/job-status-badge-layout-check.yml'
+
+jobs:
+  responsive-layout:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Playwright Chromium
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm install playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Verify compact job status badge at required breakpoints
+        run: node tests/job_status_badge_layout_check.mjs
