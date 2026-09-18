@@ -2,11 +2,29 @@ import http.cookiejar
 import json
 import os
 import re
+import socket
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 
 ROOT = os.environ.get("SHORTLISTAI_PRODUCTION_ROOT", "https://shortlistai-app.onrender.com").rstrip("/")
+
+
+def _open_with_retry(opener, request, *, attempts=12):
+    last = None
+    for attempt in range(attempts):
+        try:
+            return opener.open(request, timeout=60)
+        except urllib.error.HTTPError:
+            raise
+        except (TimeoutError, socket.timeout, urllib.error.URLError) as exc:
+            last = exc
+            if attempt == attempts - 1:
+                raise
+            print(f"Production endpoint not ready ({attempt + 1}/{attempts}); retrying")
+            time.sleep(10)
+    raise last  # pragma: no cover
 
 
 def json_request(path, *, method="GET", payload=None, opener=None, expected=200):
@@ -17,7 +35,7 @@ def json_request(path, *, method="GET", payload=None, opener=None, expected=200)
         headers["Content-Type"] = "application/json"
     request = urllib.request.Request(ROOT + path, data=data, method=method, headers=headers)
     try:
-        response = opener.open(request, timeout=60)
+        response = _open_with_retry(opener, request)
         status = response.status
         raw = response.read().decode("utf-8", errors="ignore")
         body = json.loads(raw or "{}")
@@ -34,7 +52,9 @@ def json_request(path, *, method="GET", payload=None, opener=None, expected=200)
 
 
 def get_text(path):
-    with urllib.request.urlopen(ROOT + path, timeout=60) as response:
+    opener = urllib.request.build_opener()
+    request = urllib.request.Request(ROOT + path, method="GET")
+    with _open_with_retry(opener, request) as response:
         if response.status != 200:
             raise AssertionError(f"GET {path}: HTTP {response.status}")
         return response.read().decode("utf-8", errors="ignore")
